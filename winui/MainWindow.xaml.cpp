@@ -2,6 +2,8 @@
 #include "MainWindow.xaml.h"
 #include "MainWindow.g.cpp"
 #include "core/SessionController.h"
+#include "core/ChromeLayout.h"
+#include "management/UIHelpers.h"
 #include "window/ThemeSync.h"
 #include "input/OwnedFocus.h"
 #include <commctrl.h>
@@ -28,31 +30,35 @@ MainWindow::MainWindow() {
     AppWindow().Closing([weak=get_weak()](auto&&,Microsoft::UI::Windowing::AppWindowClosingEventArgs const& args){
         auto self=weak.get();if(!self||self->closeApproved_)return;
         if(self->closePending_){args.Cancel(true);return;}
-        if(self->windowService_){self->state_.session.normalRect=self->windowService_->NormalRect();self->state_.session.maximized=self->windowService_->VisibleMode()==miniwindow::WindowMode::Maximized;}
-        const auto result=self->settings_->Save(self->state_);
-        if(!result.ok){args.Cancel(true);self->closePending_=true;self->closePrompt_=self->ConfirmCloseAsync(result.message);}
+        args.Cancel(true);self->closePending_=true;self->closePrompt_=self->RequestCloseAsync();
     });
     tray_=std::make_unique<miniwindow::TrayController>(hwnd_,[weak=get_weak()](miniwindow::TrayAction action){if(auto self=weak.get();self&&!self->closed_){
         if(action==miniwindow::TrayAction::Exit){self->Close();return;}
+        if(action==miniwindow::TrayAction::Settings){self->OpenManagement(miniwindow::ManagementPage::Settings);return;}
+        if(action==miniwindow::TrayAction::ImmersionControls){self->OpenManagement(miniwindow::ManagementPage::Settings);return;}
         auto result=action==miniwindow::TrayAction::Show?self->windowService_->SetHidden(false):self->windowService_->RestoreNormal();
         self->SyncWindowState();if(!result.ok)self->ShowError(result.message);
     }});
     windowService_=std::make_unique<miniwindow::WindowService>(hwnd_,state_.settings,[weak=get_weak()](bool visible){if(auto self=weak.get())self->Chrome().Visibility(visible?Microsoft::UI::Xaml::Visibility::Visible:Microsoft::UI::Xaml::Visibility::Collapsed);},[weak=get_weak()]{if(auto self=weak.get())self->LayoutBrowser();});
     windowService_->SetFrameHandler([weak=get_weak()](auto mode){if(auto self=weak.get())self->ApplyFrame(mode);});
-    windowService_->SetThemeHandler([weak=get_weak()](auto mode){if(auto self=weak.get())miniwindow::ThemeSync::Apply(self->hwnd_,mode,self->Root(),self->AppWindow());});
+    windowService_->SetThemeHandler([weak=get_weak()](auto mode){if(auto self=weak.get()){miniwindow::ThemeSync::Apply(self->hwnd_,mode,self->Root(),self->AppWindow());if(self->management_)self->management_->RefreshTheme();}});
     windowService_->SetRecoveryHandler([weak=get_weak()](bool immersive,bool hidden,bool minimize){if(auto self=weak.get()){self->tray_->Sync(immersive,hidden,minimize);return !miniwindow::NeedsTray(immersive,hidden,minimize)||self->tray_->Available();}return false;});
     windowService_->SetErrorHandler([weak=get_weak()](auto error){if(auto self=weak.get()){self->SyncWindowState();self->ShowError(error);}});
     windowService_->Initialize(state_.session.normalRect,state_.session.maximized);windowService_->RefreshTheme(state_.settings.themeMode);
     SetWindowSubclass(hwnd_,WindowProcedure,1,reinterpret_cast<DWORD_PTR>(this));
     themeToken_=systemTheme_.ColorValuesChanged([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get())self->DispatcherQueue().TryEnqueue([weak]{if(auto window=weak.get();window&&!window->closed_)window->windowService_->RefreshTheme(window->state_.settings.themeMode);});});
+    coordinator_=std::make_unique<miniwindow::AppCoordinator>(browserPort_,*windowService_,*settings_,state_);
+    coordinator_->SetRuntimeHandler([weak=get_weak()]()->miniwindow::OperationResult{if(auto self=weak.get()){if(self->input_)self->input_->ReloadBindings();if(self->browser_)self->browser_->Configure(self->state_.settings);self->windowService_->RefreshTheme(self->state_.settings.themeMode);return self->windowService_->RefreshVisuals();}return {false,L"窗口已关闭。"};});
+    coordinator_->Subscribe([weak=get_weak()](const auto& snapshot){if(auto self=weak.get();self&&!self->closed_)self->RenderSnapshot(snapshot);});
+    InitializeChrome();
     input_=std::make_unique<miniwindow::InputService>(hwnd_,state_,[weak=get_weak()](auto action,auto gesture){if(auto self=weak.get();self&&!self->closed_)self->HandleHotkey(action,gesture);});
-    input_->SetStatusHandler([weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_){self->inputError_.clear();for(const auto& error:self->input_->Errors())self->inputError_+=error+L"\n";self->ShowError(L"");}});
+    input_->SetStatusHandler([weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_){self->inputError_.clear();for(const auto& error:self->input_->Errors())self->inputError_+=error+L"\n";self->ShowError(L"");if(self->coordinator_)self->coordinator_->OnHotkeyErrors(self->input_->Errors());}});
     auto focusChanged=[weak=get_weak()](auto&&,auto&&){if(auto self=weak.get();self&&!self->closed_)self->DispatcherQueue().TryEnqueue([weak]{if(auto window=weak.get();window&&!window->closed_)window->RefreshOwnedFocus();});};
     Root().GotFocus(focusChanged);Root().LostFocus(focusChanged);
     Root().PreviewKeyDown([weak=get_weak()](auto&&,Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& args){if(auto self=weak.get();self&&!self->closed_&&self->input_&&self->input_->CaptureKey(static_cast<UINT>(args.Key()),miniwindow::CurrentKeyModifiers()))args.Handled(true);});
     input_->Start();
     Root().Loaded([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get();self&&!self->closed_)self->StartBrowser();});
-    Closed([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get()){self->closed_=true;if(self->input_)self->input_->Stop();self->systemTheme_.ColorValuesChanged(self->themeToken_);RemoveWindowSubclass(self->hwnd_,WindowProcedure,1);self->windowService_.reset();self->tray_.reset();if(self->browser_)self->browser_->Close();if(self->initialization_)self->initialization_.Cancel();self->browser_.reset();if(self->profileLock_){CloseHandle(self->profileLock_);self->profileLock_=nullptr;}}});
+    Closed([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get()){self->closed_=true;if(self->management_)self->management_->Shutdown();if(self->coordinator_)self->coordinator_->Subscribe({});self->browserPort_.host=nullptr;if(self->input_)self->input_->Stop();self->systemTheme_.ColorValuesChanged(self->themeToken_);RemoveWindowSubclass(self->hwnd_,WindowProcedure,1);self->windowService_.reset();self->tray_.reset();if(self->browser_)self->browser_->Close();if(self->initialization_)self->initialization_.Cancel();self->browser_.reset();if(self->profileLock_){CloseHandle(self->profileLock_);self->profileLock_=nullptr;}}});
 }
 void MainWindow::ShowError(const std::wstring& error) {const auto message=configError_+(configError_.empty()?L"":L"\n")+inputError_+error;ErrorText().Text(message);ErrorPanel().Visibility(message.empty()?Microsoft::UI::Xaml::Visibility::Collapsed:Microsoft::UI::Xaml::Visibility::Visible);}
 bool MainWindow::AcquireProfile(const std::filesystem::path& path) {
@@ -66,7 +72,7 @@ void MainWindow::StartBrowser() {if(closed_||starting_)return;starting_=true;ini
 Windows::Foundation::IAsyncAction MainWindow::InitializeBrowserAsync() {
     auto lifetime=get_strong();
     try {
-        webFocused_=false;if(browser_)browser_->Close();
+        webFocused_=false;browserPort_.host=nullptr;if(browser_)browser_->Close();
         if(profile_.empty()) {
             const auto legacy=directory_/L"XiaoChuang.exe.WebView2";
             auto candidate=std::filesystem::exists(legacy)?legacy:directory_/L"data"/L"webview-profile";
@@ -81,13 +87,13 @@ Windows::Foundation::IAsyncAction MainWindow::InitializeBrowserAsync() {
             }
         }
         if(closed_)co_return;
-        browser_=std::make_unique<miniwindow::BrowserHost>(hwnd_,profile_,[weak=get_weak()](bool,bool,std::wstring error){
-            if(auto self=weak.get();self&&!self->closed_) {self->ShowError(error);self->LayoutBrowser();}
+        browser_=std::make_unique<miniwindow::BrowserHost>(hwnd_,profile_,[weak=get_weak()](bool ready,bool loading,std::wstring error){
+            if(auto self=weak.get();self&&!self->closed_) {if(!ready&&!error.empty()){self->windowService_->RestoreNormal();self->SyncWindowState();}self->coordinator_->OnBrowserState(ready,loading,error);self->LayoutBrowser();}
         });
-        browser_->Configure(state_.settings);
-        browser_->SetDocumentHandler([weak=get_weak()](std::wstring url,std::wstring title){if(auto self=weak.get();self&&!self->closed_){auto& tab=self->state_.tabs[static_cast<size_t>(self->state_.currentTabIndex)];tab.url=std::move(url);tab.title=std::move(title);self->Address().Text(tab.url);self->Title(tab.title.empty()?L"小窗浏览器":tab.title);}});
+        browserPort_.host=browser_.get();browser_->Configure(state_.settings);
+        browser_->SetDocumentHandler([weak=get_weak()](std::wstring url,std::wstring title){if(auto self=weak.get();self&&!self->closed_){self->coordinator_->OnDocument(std::move(url),std::move(title));}});
         browser_->SetFocusHandler([weak=get_weak()](bool focused){if(auto self=weak.get();self&&!self->closed_){self->webFocused_=focused;self->RefreshOwnedFocus();}});
-        browser_->SetNavigationHandlers([weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_){self->input_->CancelGesture();self->input_->OnPageTyping(false);}},[weak=get_weak()](std::wstring url){if(auto self=weak.get();self&&!self->closed_){miniwindow::SessionController(self->state_).AddTab(url);self->browser_->Navigate(url);self->Address().Text(url);}},[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_){self->input_->CancelGesture();miniwindow::SessionController(self->state_).CloseTab(static_cast<size_t>(self->state_.currentTabIndex));self->browser_->Navigate(self->state_.tabs[static_cast<size_t>(self->state_.currentTabIndex)].url);}});
+        browser_->SetNavigationHandlers([weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_){self->input_->CancelGesture();self->input_->OnPageTyping(false);}},[weak=get_weak()](std::wstring url){if(auto self=weak.get();self&&!self->closed_){self->coordinator_->AddTab(std::move(url));}},[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_){self->input_->CancelGesture();self->coordinator_->CloseTab(static_cast<size_t>(self->state_.currentTabIndex));}});
         browser_->SetPageSignalHandler([weak=get_weak()](miniwindow::PageSignal signal){if(auto self=weak.get();self&&!self->closed_){if(signal.kind==miniwindow::PageSignal::Typing)self->input_->OnPageTyping(signal.flag);else if(signal.kind==miniwindow::PageSignal::Fullscreen){self->webFullscreen_=signal.flag;self->windowService_->OnWebFullscreen(signal.flag);self->input_->SetImmersiveWebFullscreen(signal.flag&&self->windowService_->Immersive());}else if(signal.kind==miniwindow::PageSignal::VideoAspect)self->windowService_->OnWebFullscreen(true,signal.aspect);}});
         LayoutBrowser();browser_->Navigate(state_.tabs[static_cast<size_t>(state_.currentTabIndex)].url);
         co_await browser_->InitializeAsync();
@@ -115,9 +121,7 @@ void MainWindow::LayoutBrowser() {
 void MainWindow::AddressKeyDown(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& args) {if(args.Key()==Windows::System::VirtualKey::Enter){NavigateClick(nullptr,nullptr);args.Handled(true);}}
 void MainWindow::NavigateClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&) {
     if(!browser_)return;
-    const auto url=xiaochuang::NormalizeInputUrl(std::wstring(Address().Text()));const auto result=browser_->Navigate(url);
-    if(result.ok){state_.tabs[static_cast<size_t>(state_.currentTabIndex)].url=url;browser_->Focus();}
-    else{ErrorText().Text(result.message);ErrorPanel().Visibility(Microsoft::UI::Xaml::Visibility::Visible);}
+    coordinator_->Navigate(std::wstring(Address().Text()));if(coordinator_->Snapshot().error.empty())browser_->Focus();
 }
 void MainWindow::RetryClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&) {StartBrowser();}
 void MainWindow::WebSlotSizeChanged(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::SizeChangedEventArgs const&) {LayoutBrowser();}
@@ -128,7 +132,7 @@ void MainWindow::ApplyFrame(miniwindow::WindowMode mode) {
     ExtendsContentIntoTitleBar(false);SetTitleBar(nullptr);presenter.SetBorderAndTitleBar(normal,normal);
     miniwindow::ThemeSync::Apply(hwnd_,state_.settings.themeMode,Root(),AppWindow());
 }
-void MainWindow::SyncWindowState(){if(!windowService_)return;if(input_)input_->CancelGesture();state_.windowHidden=windowService_->Hidden();state_.immersionActive=windowService_->Immersive();state_.windowMode=windowService_->VisibleMode();if(browser_)browser_->SetVisible(!state_.windowHidden);if(input_){input_->RefreshRuntime();input_->SetImmersiveWebFullscreen(webFullscreen_&&state_.immersionActive);}LayoutBrowser();}
+void MainWindow::SyncWindowState(){if(!windowService_)return;if(input_)input_->CancelGesture();state_.windowHidden=windowService_->Hidden();state_.immersionActive=windowService_->Immersive();state_.windowMode=windowService_->VisibleMode();if(browser_)browser_->SetVisible(!state_.windowHidden);if(input_){input_->RefreshRuntime();input_->SetImmersiveWebFullscreen(webFullscreen_&&state_.immersionActive);}if(coordinator_)coordinator_->OnWindowState(state_.windowMode,state_.windowHidden,state_.immersionActive);UpdateChromeLayout();LayoutBrowser();}
 void MainWindow::MaximizeClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&){auto result=windowService_->SetMode(windowService_->Mode()==miniwindow::WindowMode::Maximized?miniwindow::WindowMode::Normal:miniwindow::WindowMode::Maximized);SyncWindowState();if(!result.ok)ShowError(result.message);}
 void MainWindow::ImmersionClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&){auto result=windowService_->Immersive()?windowService_->RestoreNormal():windowService_->SetMode(state_.settings.immersionStyle==miniwindow::ImmersionStyle::Hole?miniwindow::WindowMode::ImmersionHole:miniwindow::WindowMode::ImmersionAutoHide);SyncWindowState();if(!result.ok)ShowError(result.message);}
 void MainWindow::HideClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&){auto result=windowService_->SetHidden(true);SyncWindowState();if(!result.ok)ShowError(result.message);}
@@ -150,7 +154,7 @@ LRESULT CALLBACK MainWindow::WindowProcedure(HWND hwnd,UINT message,WPARAM param
     return DefSubclassProc(hwnd,message,parameter,data);
 }
 
-void MainWindow::RefreshOwnedFocus(){if(input_&&GetAncestor(GetForegroundWindow(),GA_ROOT)==hwnd_)input_->SetOwnedTextFocus(!webFocused_&&miniwindow::HasOwnedTextFocus(Root().XamlRoot()));}
+void MainWindow::RefreshOwnedFocus(){if(!input_)return;const auto foreground=GetAncestor(GetForegroundWindow(),GA_ROOT);const bool ownMain=foreground==hwnd_&&!webFocused_&&miniwindow::HasOwnedTextFocus(Root().XamlRoot());input_->SetOwnedTextFocus(ownMain||(management_&&management_->ForegroundTextFocus()));}
 void MainWindow::HandleHotkey(miniwindow::HotkeyAction action,miniwindow::HotkeyGesture gesture) {
     using miniwindow::HotkeyAction;using miniwindow::HotkeyGesture;using miniwindow::MediaCommand;
     if(action==HotkeyAction::Immersion){ImmersionClick(nullptr,nullptr);return;}
@@ -165,4 +169,89 @@ void MainWindow::HandleHotkey(miniwindow::HotkeyAction action,miniwindow::Hotkey
     browser_->ExecuteMedia(command,state_.settings.holdPlaybackRate);
 }
 
+}
+
+namespace {
+using namespace winrt;
+using namespace winrt::Microsoft::UI::Xaml;
+using namespace winrt::Microsoft::UI::Xaml::Controls;
+MenuFlyoutItem MenuCommand(std::wstring title,std::function<void()> action,bool enabled=true){MenuFlyoutItem item;item.Text(title);item.MaxWidth(420);item.IsEnabled(enabled);item.Click([action](auto&&,auto&&){action();});return item;}
+}
+namespace winrt::MiniWindow::implementation {
+void MainWindow::InitializeChrome(){
+    Tabs().AddTabButtonClick([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get())self->coordinator_->AddTab(self->state_.settings.homeUrl);});
+    Tabs().SelectionChanged([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get();self&&!self->syncingTabs_&&self->Tabs().SelectedIndex()>=0)self->coordinator_->SelectTab(static_cast<size_t>(self->Tabs().SelectedIndex()));});
+    Tabs().TabCloseRequested([weak=get_weak()](auto&&,auto const& args){if(auto self=weak.get()){uint32_t index=0;if(self->Tabs().TabItems().IndexOf(args.Tab(),index))self->coordinator_->CloseTab(index);}});
+    BackButton().Click([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get();self&&self->browser_)self->browser_->GoBack();});
+    RefreshButton().Click([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get();self&&self->browser_)self->browser_->RefreshOrStop();});
+    StarButton().Click([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get())self->ToggleBookmarkAsync();});
+    BookmarksButton().Click([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get())self->ShowBookmarks(self->BookmarksButton());});
+    PresetsButton().Click([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get())self->OpenManagement(miniwindow::ManagementPage::Presets);});
+    auto settings=[weak=get_weak()](auto&&,auto&&){if(auto self=weak.get())self->OpenManagement(miniwindow::ManagementPage::Settings);};
+    SettingsButton().Click(settings);ErrorSettingsButton().Click(settings);
+    TabMenuButton().Click([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get())self->ShowTabMenu();});
+    MoreButton().Click([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get())self->ShowMoreMenu();});
+    Root().SizeChanged([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get()){self->UpdateChromeLayout();self->LayoutBrowser();}});
+    RenderSnapshot(coordinator_->Snapshot());
+}
+void MainWindow::RenderSnapshot(const miniwindow::AppSnapshot& snapshot){
+    if(closed_)return;
+    ShowError(snapshot.error);const auto& state=snapshot.state;
+    const auto& active=state.tabs[static_cast<size_t>(state.currentTabIndex)];
+    if(renderedTab_!=state.currentTabIndex||(renderedUrl_!=active.url&&!miniwindow::HasOwnedTextFocus(Root().XamlRoot())))Address().Text(active.url);
+    renderedTab_=state.currentTabIndex;renderedUrl_=active.url;
+    Title(active.title.empty()?L"小窗浏览器":active.title);ActiveTabTitle().Text(active.title.empty()?L"网页":active.title);
+    std::wstring identity;for(const auto& tab:state.tabs)identity+=std::to_wstring(tab.title.size())+L":"+tab.title+L"|"+std::to_wstring(tab.url.size())+L":"+tab.url+L";";
+    syncingTabs_=true;
+    if(identity!=renderedTabs_){renderedTabs_=std::move(identity);Tabs().TabItems().Clear();for(size_t i=0;i<state.tabs.size();++i){
+        Microsoft::UI::Xaml::Controls::TabViewItem item;item.Header(box_value(state.tabs[i].title));item.IsClosable(true);
+        Microsoft::UI::Xaml::Controls::ToolTipService::SetToolTip(item,box_value(state.tabs[i].title+L"\n"+state.tabs[i].url));
+        Microsoft::UI::Xaml::Controls::MenuFlyout menu;
+        menu.Items().Append(MenuCommand(L"关闭当前标签",[weak=get_weak(),i]{if(auto self=weak.get())self->coordinator_->CloseTab(i);}));
+        menu.Items().Append(MenuCommand(L"关闭其他标签",[weak=get_weak(),i]{if(auto self=weak.get())self->coordinator_->CloseOtherTabs(i);}));
+        menu.Items().Append(MenuCommand(L"关闭全部标签",[weak=get_weak()]{if(auto self=weak.get())self->coordinator_->CloseAllTabs();}));
+        item.ContextFlyout(menu);Tabs().TabItems().Append(item);
+    }}
+    Tabs().SelectedIndex(state.currentTabIndex);syncingTabs_=false;
+    BackButton().IsEnabled(browser_&&browser_->CanGoBack());RefreshButton().Content(box_value(snapshot.loading?L"\xE71A":L"\xE72C"));
+    const bool bookmarked=std::any_of(state.bookmarks.begin(),state.bookmarks.end(),[&](const auto& item){return item.url==active.url;});StarButton().Content(box_value(bookmarked?L"\xE735":L"\xE734"));
+    if(management_)management_->Refresh();UpdateChromeLayout();
+}
+void MainWindow::UpdateChromeLayout(){
+    const auto layout=miniwindow::CalculateChromeLayout(Root().ActualWidth());using Visibility=Microsoft::UI::Xaml::Visibility;
+    const bool full=layout==miniwindow::ChromeLayout::Full,wide=full||layout==miniwindow::ChromeLayout::Compact;
+    for(auto const& element:{StarButton(),BookmarksButton(),PresetsButton(),SettingsButton()})element.Visibility(full?Visibility::Visible:Visibility::Collapsed);
+    BackButton().Visibility(wide?Visibility::Visible:Visibility::Collapsed);RefreshButton().Visibility(wide?Visibility::Visible:Visibility::Collapsed);
+    Tabs().Visibility(wide?Visibility::Visible:Visibility::Collapsed);TabMenuButton().Visibility(wide?Visibility::Collapsed:Visibility::Visible);
+    StatusText().Visibility(full&&!state_.immersionActive&&!state_.windowHidden&&Root().ActualHeight()>=240?Visibility::Visible:Visibility::Collapsed);
+    StatusText().Text(L"普通浏览  ·  Ctrl+Alt+滚轮调整窗口大小");
+}
+void MainWindow::FillBookmarkMenu(Windows::Foundation::Collections::IVector<Microsoft::UI::Xaml::Controls::MenuFlyoutItemBase> const& items){
+    const auto& bookmarks=coordinator_->Snapshot().state.bookmarks;
+    if(bookmarks.empty())items.Append(MenuCommand(L"暂无书签，点击星标收藏",[]{},false));
+    for(size_t i=0;i<bookmarks.size();++i){auto item=MenuCommand(bookmarks[i].title,[weak=get_weak(),i]{if(auto self=weak.get())self->coordinator_->OpenBookmark(i);});Microsoft::UI::Xaml::Controls::ToolTipService::SetToolTip(item,box_value(bookmarks[i].title+L"\n"+bookmarks[i].url));items.Append(item);}
+    items.Append(Microsoft::UI::Xaml::Controls::MenuFlyoutSeparator());items.Append(MenuCommand(L"管理书签…",[weak=get_weak()]{if(auto self=weak.get())self->OpenManagement(miniwindow::ManagementPage::Bookmarks);}));
+}
+void MainWindow::ShowBookmarks(Microsoft::UI::Xaml::FrameworkElement const& anchor){Microsoft::UI::Xaml::Controls::MenuFlyout flyout;FillBookmarkMenu(flyout.Items());flyout.ShowAt(anchor);}
+void MainWindow::ShowTabMenu(){Microsoft::UI::Xaml::Controls::MenuFlyout flyout;for(size_t i=0;i<state_.tabs.size();++i)flyout.Items().Append(MenuCommand((static_cast<int>(i)==state_.currentTabIndex?L"● ":L"")+state_.tabs[i].title,[weak=get_weak(),i]{if(auto self=weak.get())self->coordinator_->SelectTab(i);}));flyout.Items().Append(Microsoft::UI::Xaml::Controls::MenuFlyoutSeparator());flyout.Items().Append(MenuCommand(L"新建标签",[weak=get_weak()]{if(auto self=weak.get())self->coordinator_->AddTab(self->state_.settings.homeUrl);}));flyout.Items().Append(MenuCommand(L"关闭当前标签",[weak=get_weak()]{if(auto self=weak.get())self->coordinator_->CloseTab(static_cast<size_t>(self->state_.currentTabIndex));}));flyout.Items().Append(MenuCommand(L"关闭其他标签",[weak=get_weak()]{if(auto self=weak.get())self->coordinator_->CloseOtherTabs(static_cast<size_t>(self->state_.currentTabIndex));}));flyout.Items().Append(MenuCommand(L"关闭全部标签",[weak=get_weak()]{if(auto self=weak.get())self->coordinator_->CloseAllTabs();}));flyout.ShowAt(TabMenuButton());}
+void MainWindow::ShowMoreMenu(){
+    Microsoft::UI::Xaml::Controls::MenuFlyout flyout;auto items=flyout.Items();
+    items.Append(MenuCommand(L"后退",[weak=get_weak()]{if(auto self=weak.get();self&&self->browser_)self->browser_->GoBack();},browser_&&browser_->CanGoBack()));
+    items.Append(MenuCommand(L"刷新 / 停止",[weak=get_weak()]{if(auto self=weak.get();self&&self->browser_)self->browser_->RefreshOrStop();}));
+    items.Append(MenuCommand(L"收藏当前网页",[weak=get_weak()]{if(auto self=weak.get())self->ToggleBookmarkAsync();}));
+    Microsoft::UI::Xaml::Controls::MenuFlyoutSubItem bookmarks;bookmarks.Text(L"书签");FillBookmarkMenu(bookmarks.Items());items.Append(bookmarks);
+    items.Append(MenuCommand(L"场景预设",[weak=get_weak()]{if(auto self=weak.get())self->OpenManagement(miniwindow::ManagementPage::Presets);}));
+    items.Append(MenuCommand(L"沉浸控制…",[weak=get_weak()]{if(auto self=weak.get())self->OpenManagement(miniwindow::ManagementPage::Settings);}));
+    items.Append(MenuCommand(L"设置",[weak=get_weak()]{if(auto self=weak.get())self->OpenManagement(miniwindow::ManagementPage::Settings);}));
+    items.Append(MenuCommand(L"恢复普通模式",[weak=get_weak()]{if(auto self=weak.get()){self->coordinator_->RestoreNormal();self->SyncWindowState();}}));
+    items.Append(MenuCommand(L"隐藏窗口",[weak=get_weak()]{if(auto self=weak.get())self->HideClick(nullptr,nullptr);}));
+    items.Append(MenuCommand(L"最小化",[weak=get_weak()]{if(auto self=weak.get())ShowWindow(self->hwnd_,SW_MINIMIZE);}));
+    items.Append(MenuCommand(L"退出",[weak=get_weak()]{if(auto self=weak.get())self->Close();}));flyout.ShowAt(MoreButton());
+}
+void MainWindow::OpenManagement(miniwindow::ManagementPage page){
+    if(!management_){management_=make_self<ManagementWindow>();management_->Bind(*coordinator_,[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_)self->RefreshOwnedFocus();},[weak=get_weak()](UINT key,UINT modifiers){if(auto self=weak.get();self&&!self->closed_)return self->input_->CaptureKey(key,modifiers);return false;});}
+    input_->CancelGesture();management_->Open(page);
+}
+Windows::Foundation::IAsyncAction MainWindow::ToggleBookmarkAsync(){auto lifetime=get_strong();const auto tab=state_.tabs[static_cast<size_t>(state_.currentTabIndex)];for(size_t i=0;i<state_.bookmarks.size();++i)if(state_.bookmarks[i].url==tab.url){if(co_await miniwindow::ui::Confirm(Root().XamlRoot(),L"取消收藏？",state_.bookmarks[i].title,L"取消收藏"))coordinator_->DeleteBookmark(i);co_return;}coordinator_->SaveBookmark({}, {tab.title.empty()?tab.url:tab.title,tab.url});}
+Windows::Foundation::IAsyncAction MainWindow::RequestCloseAsync(){auto lifetime=get_strong();try{if(management_&&!co_await management_->CanLeaveAsync()){closePending_=false;co_return;}state_.session.normalRect=windowService_->NormalRect();state_.session.maximized=windowService_->VisibleMode()==miniwindow::WindowMode::Maximized;const auto result=settings_->Save(state_);if(result.ok){closeApproved_=true;Close();}else{windowService_->RestoreNormal();SyncWindowState();co_await ConfirmCloseAsync(result.message);}}catch(const hresult_error& error){ShowError(std::wstring(error.message()));}closePending_=false;}
 }

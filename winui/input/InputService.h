@@ -16,6 +16,7 @@ public:
     void SetStatusHandler(std::function<void()> handler){status_=std::move(handler);}
     void Dispatch(HotkeyAction,HotkeyGesture);
     void RefreshRuntime();
+    void ReloadBindings(){runtimeKnown_=false;RefreshRuntime();}
     bool Suppressed() const {return guard_.IsTyping();}
     bool Capturing() const {return capture_.has_value();}
     const std::vector<std::wstring>& Errors() const {return errors_;}

@@ -1,0 +1,1 @@
+namespace MiniWindow { [default_interface] runtimeclass PresetPage : Microsoft.UI.Xaml.Controls.Page { PresetPage(); } }

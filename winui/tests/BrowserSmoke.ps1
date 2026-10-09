@@ -127,6 +127,10 @@ try {
  $result.holdCancel=(Evaluate 'document.querySelector("video").playbackRate') -eq 1
  [void][MiniWindowInputSmoke.Native]::Key($true);$keyHeld=$false
  if(-not $result.holdCancel){throw 'Changing to XAML text focus left hold speed active.'}
+ $probe=Join-Path (Split-Path $Fixture) 'VisibleSurfaceSmoke.ps1'
+ if(Test-Path $probe){& $probe -Window $window -OutputDirectory $directory -Evaluate {param($expression) Evaluate $expression}}
+ $chrome=Join-Path (Split-Path $Fixture) 'ChromeSmoke.ps1'
+ if(Test-Path $chrome){& $chrome -Window $window -ApplicationPid $process.Id -FixtureUrl $fixtureUrl -CheckProtected {-not(Evaluate 'document.querySelector("video").paused')};$result.chrome=$true}
  $socket.Dispose();$socket=$null
  $process.Refresh()
  if($process.MainWindowHandle -eq 0){throw 'Test application has no HWND.'}
@@ -141,6 +145,7 @@ try {
  Write-Output 'BROWSER_SMOKE_OK'
 }catch{
  $result.error=$_.Exception.Message
+ $result.stack=$_.ScriptStackTrace
  throw
 }finally{
  if($keyHeld){[void][MiniWindowInputSmoke.Native]::Key($true)}

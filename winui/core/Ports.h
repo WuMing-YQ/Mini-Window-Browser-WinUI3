@@ -36,6 +36,7 @@ struct IWindowPort {
     virtual OperationResult SetHidden(bool)=0;
     virtual OperationResult RestoreNormal()=0;
     virtual RECT NormalRect() const=0;
+    virtual OperationResult ApplyGeometry(RECT,bool){return {false,L"几何操作不可用。"};}
 };
 struct ISettingsPort {
     virtual ~ISettingsPort()=default;

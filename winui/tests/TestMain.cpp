@@ -1,5 +1,6 @@
 #include "Test.h"
 #include <winrt/base.h>
+void BookmarkTests();void PresetTests();void LayoutPolicyTests();
 void SessionTests();
 void CoordinatorTests();
 void WebLifecycleTests();
@@ -13,7 +14,7 @@ void HoldCancelTests();
 int main() {
     try {
         winrt::init_apartment();
-        SessionTests(); CoordinatorTests(); WebLifecycleTests(); PageSignalsTests(); AtomicFileTests(); ConfigMigrationTests(); WindowAdapterTests(); ThemeStateTests(); InputRoutingTests(); HoldCancelTests();
+        BookmarkTests();PresetTests();LayoutPolicyTests(); SessionTests(); CoordinatorTests(); WebLifecycleTests(); PageSignalsTests(); AtomicFileTests(); ConfigMigrationTests(); WindowAdapterTests(); ThemeStateTests(); InputRoutingTests(); HoldCancelTests();
         std::cout << "PASS " << tests::checks << " WinUI core checks\n";
         return 0;
     } catch (const std::exception& e) {

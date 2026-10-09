@@ -6,6 +6,9 @@
 #include "window/WindowService.h"
 #include "window/TrayController.h"
 #include "input/InputService.h"
+#include "core/AppCoordinator.h"
+#include "browser/BrowserPort.h"
+#include "management/ManagementWindow.xaml.h"
 namespace winrt::MiniWindow::implementation {
 struct MainWindow : MainWindowT<MainWindow> {
     MainWindow();
@@ -18,6 +21,13 @@ struct MainWindow : MainWindowT<MainWindow> {
     void HideClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&);
 private:
     static LRESULT CALLBACK WindowProcedure(HWND,UINT,WPARAM,LPARAM,UINT_PTR,DWORD_PTR);
+    void InitializeChrome();void RenderSnapshot(const miniwindow::AppSnapshot&);void UpdateChromeLayout();
+    void OpenManagement(miniwindow::ManagementPage);
+    void ShowBookmarks(Microsoft::UI::Xaml::FrameworkElement const&);
+    void FillBookmarkMenu(Windows::Foundation::Collections::IVector<Microsoft::UI::Xaml::Controls::MenuFlyoutItemBase> const&);
+    void ShowTabMenu();void ShowMoreMenu();
+    Windows::Foundation::IAsyncAction ToggleBookmarkAsync();
+    Windows::Foundation::IAsyncAction RequestCloseAsync();
     void ApplyFrame(miniwindow::WindowMode);
     void SyncWindowState();
     void HandleHotkey(miniwindow::HotkeyAction,miniwindow::HotkeyGesture);
@@ -36,6 +46,12 @@ private:
     std::unique_ptr<miniwindow::WindowService> windowService_;
     std::unique_ptr<miniwindow::TrayController> tray_;
     std::unique_ptr<miniwindow::InputService> input_;
+    miniwindow::BrowserPort browserPort_;
+    std::unique_ptr<miniwindow::AppCoordinator> coordinator_;
+    com_ptr<ManagementWindow> management_;
+    bool syncingTabs_=false;
+    std::wstring renderedTabs_,renderedUrl_;
+    int renderedTab_=-1;
     bool webFullscreen_=false,webFocused_=false;
     std::wstring inputError_;
     winrt::Windows::UI::ViewManagement::UISettings systemTheme_;

@@ -1,0 +1,1 @@
+namespace MiniWindow { [default_interface] runtimeclass BookmarkPage : Microsoft.UI.Xaml.Controls.Page { BookmarkPage(); } }

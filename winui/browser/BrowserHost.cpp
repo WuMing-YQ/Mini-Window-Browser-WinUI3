@@ -23,6 +23,7 @@ bool Supported(const std::wstring& url) {
 }
 struct BrowserHost::State {
     HWND parent=nullptr;
+    HWND surface=nullptr;
     std::filesystem::path profile;
     winrt::Microsoft::UI::Dispatching::DispatcherQueue queue{nullptr};
     WebLifecycle life;
@@ -60,6 +61,17 @@ winrt::Windows::Foundation::IAsyncAction BrowserHost::InitializeAsync() {
     auto state=state_;
     const auto generation=state->life.Begin();state->generation=generation;
     state->ready=false;state->loading=false;
+    // Own the native airspace: the XAML child island otherwise covers the
+    // windowed WebView2 controller, even while its document/media keep running.
+    if(!state->surface) {
+        WNDCLASSW windowClass{};windowClass.lpfnWndProc=DefWindowProcW;
+        windowClass.hInstance=GetModuleHandleW(nullptr);windowClass.lpszClassName=L"MiniWindow.BrowserSurface";
+        if(!RegisterClassW(&windowClass)&&GetLastError()!=ERROR_CLASS_ALREADY_EXISTS){state->Report(BrowserError(HRESULT_FROM_WIN32(GetLastError())));co_return;}
+        state->surface=CreateWindowExW(0,windowClass.lpszClassName,L"",WS_CHILD|WS_VISIBLE|WS_CLIPCHILDREN|WS_CLIPSIBLINGS,
+            state->bounds.left,state->bounds.top,state->bounds.right-state->bounds.left,state->bounds.bottom-state->bounds.top,state->parent,nullptr,windowClass.hInstance,nullptr);
+        if(!state->surface){state->Report(BrowserError(HRESULT_FROM_WIN32(GetLastError())));co_return;}
+        SetWindowPos(state->surface,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+    }
     auto creation=std::make_shared<Creation>();
     if(!creation->event) {state->Report(L"无法创建浏览器初始化事件。");co_return;}
     state->creation=creation;
@@ -72,7 +84,7 @@ winrt::Windows::Foundation::IAsyncAction BrowserHost::InitializeAsync() {
             if(!s||!s->life.IsCurrent(generation)) {creation->Finish(E_ABORT);return S_OK;}
             if(FAILED(result)||!environment) {creation->Finish(FAILED(result)?result:E_FAIL);return S_OK;}
             s->environment=environment;
-            const auto controllerResult=environment->CreateCoreWebView2Controller(s->parent,
+            const auto controllerResult=environment->CreateCoreWebView2Controller(s->surface,
                 Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>([weak,generation,creation](HRESULT result,ICoreWebView2Controller* controller)->HRESULT {
                     auto s=weak.lock();
                     if(!s||!s->life.IsCurrent(generation)) {if(controller)controller->Close();creation->Finish(E_ABORT);return S_OK;}
@@ -84,7 +96,7 @@ winrt::Windows::Foundation::IAsyncAction BrowserHost::InitializeAsync() {
                     if(FAILED(result)) {creation->Finish(result);return S_OK;}
                     result=s->zoom.Configure(s->settings);
                     if(FAILED(result)) {creation->Finish(result);return S_OK;}
-                    controller->put_Bounds(s->bounds);
+                    controller->put_Bounds({0,0,s->bounds.right-s->bounds.left,s->bounds.bottom-s->bounds.top});
                     controller->put_IsVisible(s->visible);
                     wil::com_ptr<ICoreWebView2Settings> settings;
                     if(SUCCEEDED(s->view->get_Settings(&settings))) settings->put_IsStatusBarEnabled(FALSE);
@@ -186,10 +198,16 @@ void BrowserHost::Close() {
     s->events=false;
     if(s->controller)s->controller->Close();
     s->view.reset();s->controller.reset();s->environment.reset();
+    if(s->surface){DestroyWindow(s->surface);s->surface=nullptr;}
 }
 void BrowserHost::SetFixedZoom(bool enabled,int percent) {state_->settings.fixedWebZoomEnabled=enabled;state_->settings.fixedWebZoomPercent=percent;if(state_->controller){auto result=state_->zoom.Configure(state_->settings);if(FAILED(result))state_->Report(BrowserError(result));}}
 void BrowserHost::Configure(const AppSettings& settings) {state_->settings=settings;SetFixedZoom(settings.fixedWebZoomEnabled,settings.fixedWebZoomPercent);}
-void BrowserHost::SetBounds(RECT bounds) {state_->bounds=bounds;if(state_->controller)state_->controller->put_Bounds(bounds);}
+void BrowserHost::SetBounds(RECT bounds) {
+    state_->bounds=bounds;
+    if(state_->surface)SetWindowPos(state_->surface,HWND_TOP,bounds.left,bounds.top,
+        std::max(0L,bounds.right-bounds.left),std::max(0L,bounds.bottom-bounds.top),SWP_NOACTIVATE);
+    if(state_->controller)state_->controller->put_Bounds({0,0,std::max(0L,bounds.right-bounds.left),std::max(0L,bounds.bottom-bounds.top)});
+}
 void BrowserHost::NotifyParentMoved() {if(state_->controller)state_->controller->NotifyParentWindowPositionChanged();}
 void BrowserHost::SetPageSignalHandler(std::function<void(PageSignal)> handler) {state_->signal=std::move(handler);}
 void BrowserHost::SetDocumentHandler(std::function<void(std::wstring,std::wstring)> handler) {state_->document=std::move(handler);}

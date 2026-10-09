@@ -27,7 +27,7 @@ public:
     xiaochuang::ThemeMode Theme() const {return theme_;}
     void SetChromeHeight(int pixels){controller_.SetChromeHeight(pixels);}
     void OnWebFullscreen(bool,double aspect=0);
-    OperationResult ApplyGeometry(RECT,bool);
+    OperationResult ApplyGeometry(RECT,bool) override;
     OperationResult RefreshVisuals();
     OperationResult RestoreForDrag(POINT);
     void ReassertTopmost(){controller_.ReassertTopmost();}
