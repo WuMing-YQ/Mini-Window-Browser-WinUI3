@@ -361,3 +361,7 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# WinUI implementation output and local execution scratch
+/winui/Generated Files/
+/artifacts/
+/work/
