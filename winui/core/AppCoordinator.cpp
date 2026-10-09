@@ -6,11 +6,13 @@
 namespace miniwindow {
 AppCoordinator::AppCoordinator(IBrowserPort& browser,IWindowPort& window,ISettingsPort& settings)
     :browser_(browser),window_(window),settings_(settings),state_(snapshot_.state) {
-    runningRender_=state_.settings.renderMode;SessionController(state_).CloseAll();
+    runningRender_=state_.settings.renderMode;SessionController(state_).CloseAll();InitializeBookmarkIds();
 }
 AppCoordinator::AppCoordinator(IBrowserPort& browser,IWindowPort& window,ISettingsPort& settings,AppState& sharedState)
-    :browser_(browser),window_(window),settings_(settings),state_(sharedState){runningRender_=state_.settings.renderMode;if(state_.tabs.empty())SessionController(state_).CloseAll();snapshot_.state=state_;}
+    :browser_(browser),window_(window),settings_(settings),state_(sharedState){runningRender_=state_.settings.renderMode;if(state_.tabs.empty())SessionController(state_).CloseAll();snapshot_.state=state_;InitializeBookmarkIds();}
 AppCoordinator::~AppCoordinator() {subscriber_={};}
+void AppCoordinator::InitializeBookmarkIds(){snapshot_.bookmarkIds.clear();for(size_t i=0;i<state_.bookmarks.size();++i)snapshot_.bookmarkIds.push_back(nextBookmarkId_++);}
+std::optional<size_t> AppCoordinator::BookmarkIndex(uint64_t id)const{auto found=std::find(snapshot_.bookmarkIds.begin(),snapshot_.bookmarkIds.end(),id);if(found==snapshot_.bookmarkIds.end())return {};return static_cast<size_t>(found-snapshot_.bookmarkIds.begin());}
 void AppCoordinator::Subscribe(std::function<void(const AppSnapshot&)> subscriber) {
     subscriber_=std::move(subscriber);
     if(subscriber_) subscriber_(snapshot_);
@@ -59,7 +61,10 @@ void AppCoordinator::OnBrowserState(bool ready,bool loading,std::wstring error) 
 }
 void AppCoordinator::OnWindowState(WindowMode mode,bool hidden,bool immersive){state_.windowMode=mode;state_.windowHidden=hidden;state_.immersionActive=immersive;state_.session.normalRect=window_.NormalRect();state_.session.maximized=mode==WindowMode::Maximized;Publish();}
 void AppCoordinator::OnHotkeyErrors(std::vector<std::wstring> errors){snapshot_.hotkeyErrors=std::move(errors);Publish();}
-void AppCoordinator::OnDocument(std::wstring url,std::wstring title){auto& tab=state_.tabs[static_cast<size_t>(state_.currentTabIndex)];tab.url=std::move(url);tab.title=std::move(title);Publish();}
+void AppCoordinator::OnDocument(std::wstring url,std::wstring title){
+    for(auto& character:title)if(character==L'\r'||character==L'\n'||character==L'\0')character=L' ';
+    if(title.size()>4092){title.resize(4091);if(!title.empty()&&title.back()>=0xD800&&title.back()<=0xDBFF)title.pop_back();title+=L"…";}
+auto& tab=state_.tabs[static_cast<size_t>(state_.currentTabIndex)];tab.url=std::move(url);tab.title=std::move(title);Publish();}
 void AppCoordinator::NavigateActive(){auto result=browser_.Navigate(state_.tabs[static_cast<size_t>(state_.currentTabIndex)].url);Publish(std::move(result));}
 void AppCoordinator::AddTab(std::wstring url){SessionController(state_).AddTab(std::move(url));NavigateActive();}
 void AppCoordinator::SelectTab(size_t index){if(index>=state_.tabs.size())return;SessionController(state_).SelectTab(index);NavigateActive();}
@@ -67,14 +72,14 @@ void AppCoordinator::CloseTab(size_t index){if(index>=state_.tabs.size())return;
 void AppCoordinator::CloseOtherTabs(size_t index){if(index>=state_.tabs.size())return;SessionController(state_).CloseOthers(index);NavigateActive();}
 void AppCoordinator::CloseAllTabs(){SessionController(state_).CloseAll();NavigateActive();}
 void AppCoordinator::OpenBookmark(size_t index){if(index>=state_.bookmarks.size())return;Navigate(state_.bookmarks[index].url);}
-OperationResult AppCoordinator::CommitCollection(AppState next){next.session.normalRect=window_.NormalRect();next.session.maximized=state_.windowMode==WindowMode::Maximized;auto result=settings_.Save(next);if(result.ok)state_=std::move(next);return Finish(result);}
+OperationResult AppCoordinator::CommitCollection(AppState next,std::optional<std::vector<uint64_t>> ids){next.session.normalRect=window_.NormalRect();next.session.maximized=state_.windowMode==WindowMode::Maximized;auto result=settings_.Save(next);if(result.ok){state_=std::move(next);if(ids)snapshot_.bookmarkIds=std::move(*ids);}return Finish(result);}
 OperationResult AppCoordinator::SaveBookmark(std::optional<size_t> index,Bookmark bookmark){
     bookmark.title=xiaochuang::TrimWhitespace(std::move(bookmark.title));bookmark.url=xiaochuang::TrimWhitespace(std::move(bookmark.url));
     if(bookmark.title.empty()||bookmark.url.empty())return Finish({false,L"请填写书签标题和网址。"});
     if(index&&*index>=state_.bookmarks.size())return Finish({false,L"书签已不存在。"});
-    bookmark.url=xiaochuang::NormalizeInputUrl(bookmark.url);auto next=state_;if(index)next.bookmarks[*index]=std::move(bookmark);else next.bookmarks.push_back(std::move(bookmark));return CommitCollection(std::move(next));
+    bookmark.url=xiaochuang::NormalizeInputUrl(bookmark.url);auto next=state_;auto ids=snapshot_.bookmarkIds;if(index)next.bookmarks[*index]=std::move(bookmark);else{next.bookmarks.push_back(std::move(bookmark));ids.push_back(nextBookmarkId_++);}return CommitCollection(std::move(next),std::move(ids));
 }
-OperationResult AppCoordinator::DeleteBookmark(size_t index){if(index>=state_.bookmarks.size())return Finish({false,L"书签已不存在。"});auto next=state_;next.bookmarks.erase(next.bookmarks.begin()+static_cast<ptrdiff_t>(index));return CommitCollection(std::move(next));}
+OperationResult AppCoordinator::DeleteBookmark(size_t index){if(index>=state_.bookmarks.size())return Finish({false,L"书签已不存在。"});auto next=state_;next.bookmarks.erase(next.bookmarks.begin()+static_cast<ptrdiff_t>(index));auto ids=snapshot_.bookmarkIds;ids.erase(ids.begin()+static_cast<ptrdiff_t>(index));return CommitCollection(std::move(next),std::move(ids));}
 OperationResult AppCoordinator::ValidatePresetName(std::wstring& name,std::optional<size_t> ignore){name=xiaochuang::TrimWhitespace(std::move(name));if(name.empty())return {false,L"预设名称不能为空。"};std::vector<std::wstring> names;for(const auto& preset:state_.presets)names.push_back(preset.name);if(xiaochuang::HasPresetNameConflict(names,name,ignore.value_or(static_cast<size_t>(-1))))return {false,L"已存在同名预设。"};return {};}
 OperationResult AppCoordinator::SaveCurrentPreset(std::wstring name){
     auto valid=ValidatePresetName(name);if(!valid.ok)return Finish(valid);

@@ -19,6 +19,7 @@ struct OperationResult { bool ok=true; std::wstring message; };
 struct AppSnapshot {
     uint64_t revision=1;
     AppState state;
+    std::vector<uint64_t> bookmarkIds;
     bool browserReady=false, loading=false, pendingRestart=false;
     std::wstring error,captureStatus;
     std::vector<std::wstring> hotkeyErrors;

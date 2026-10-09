@@ -357,7 +357,7 @@ void WindowModeController::ApplyVisibleMode(WindowMode mode, bool restoreGeometr
     ApplyStyle(style, exStyle);
     RefreshFrameAppearance();
 
-    UINT positionFlags = SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW;
+    UINT positionFlags = SWP_NOACTIVATE | SWP_FRAMECHANGED | (hidden_ ? 0U : SWP_SHOWWINDOW);
     if (immersive) {
         if (restoreGeometry) {
             const RECT rect = CalculateImmersionRect(

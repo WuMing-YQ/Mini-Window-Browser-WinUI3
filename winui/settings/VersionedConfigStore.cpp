@@ -232,6 +232,20 @@ OperationResult Validate(const Ini& ini,bool versioned) {
         if(range&&(!Integer(value,number)||number<range->first||number>range->second))return {false,L"配置数值无效："+section+L"."+key};
         if(hotkey&&!ValidHotkey(value))return {false,L"快捷键配置无效："+key};
     }
+    auto get=[&](const std::wstring& section,const std::wstring& key)->const std::wstring*{auto rows=ini.find(section);if(rows==ini.end())return nullptr;auto field=rows->second.find(key);return field==rows->second.end()?nullptr:&field->second;};
+    auto count=[&](const std::wstring& section,const std::wstring& key)->int{auto value=get(section,key);return value?std::stoi(*value):0;};
+    auto complete=[&](const std::wstring& section,const std::wstring& key,bool nonempty){auto value=get(section,key);return value&&(!nonempty||!value->empty());};
+    if(versioned&&(!get(L"bookmarks",L"count")||!get(L"presets",L"count")||!get(L"session",L"tabcount")))return {false,L"配置列表计数缺失，已保护原文件。"};
+    for(int i=0;i<count(L"bookmarks",L"count");++i){const auto suffix=std::to_wstring(i);if(!complete(L"bookmarks",L"url"+suffix,true)||!complete(L"bookmarks",L"title"+suffix,false))return {false,L"书签记录不完整，已保护原文件。"};}
+    const int tabs=count(L"session",L"tabcount");for(int i=0;i<tabs;++i){const auto suffix=std::to_wstring(i);if(!complete(L"session",L"taburl"+suffix,true)||!complete(L"session",L"tabtitle"+suffix,false))return {false,L"会话标签不完整，已保护原文件。"};}
+    if(tabs>0&&count(L"session",L"activetab")>=tabs)return {false,L"当前会话标签超出列表范围。"};
+    for(int i=0;i<count(L"presets",L"count");++i){const auto prefix=L"p"+std::to_wstring(i)+L"_";
+        if(!complete(L"presets",prefix+L"name",true))return {false,L"预设记录不完整，已保护原文件。"};
+        if(versioned&&!get(L"presets",prefix+L"tabcount"))return {false,L"预设标签计数缺失，已保护原文件。"};
+        const int presetTabs=count(L"presets",prefix+L"tabcount");
+        for(int j=0;j<presetTabs;++j){const auto key=prefix+L"tab"+std::to_wstring(j)+L"_";if(!complete(L"presets",key+L"url",true)||!complete(L"presets",key+L"title",false))return {false,L"预设标签不完整，已保护原文件。"};}
+        if(presetTabs>0&&count(L"presets",prefix+L"activetab")>=presetTabs)return {false,L"预设当前标签超出列表范围。"};
+    }
     return {};
 }
 int Field(const Ini& ini,const std::wstring& section,const std::wstring& key,int fallback) {

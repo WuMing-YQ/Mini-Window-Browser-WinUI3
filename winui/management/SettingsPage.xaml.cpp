@@ -31,10 +31,10 @@ void SettingsPage::Choice(Panel panel,const std::wstring& name,std::vector<std::
  ComboBox box;box.Header(box_value(name));box.HorizontalAlignment(HorizontalAlignment::Stretch);AccessibleName(box,name);for(const auto& item:options)box.Items().Append(box_value(item));panel.Children().Append(box);
  fields_[name]={box,[box,set](auto& settings){set(settings,box.SelectedIndex());return miniwindow::OperationResult{};},[box,get](const auto& settings){box.SelectedIndex(get(settings));}};box.SelectionChanged([this,name](auto&&,auto&&){Changed(name,true);});
 }
-void SettingsPage::Bind(miniwindow::AppCoordinator& app,std::function<void(miniwindow::HotkeyAction)> capture,std::function<void()> panel){
+void SettingsPage::Bind(miniwindow::AppCoordinator& app,std::function<void(miniwindow::HotkeyAction)> capture,std::function<void()> panel,std::function<void()> cancelCapture){
  app_=&app;syncing_=true;
  for(const auto& category:{L"窗口与行为",L"沉浸",L"网页与媒体",L"快捷键",L"外观",L"诊断与关于"}){Categories().Items().Append(box_value(category));Panel section;section.Spacing(12);section.Visibility(Visibility::Collapsed);Sections().Children().Append(section);panels_.push_back(section);}
- Categories().SelectionChanged([this](auto&&,auto&&){for(size_t i=0;i<panels_.size();++i)panels_[i].Visibility(Categories().SelectedIndex()==static_cast<int>(i)?Visibility::Visible:Visibility::Collapsed);});Categories().SelectedIndex(0);
+ Categories().SelectionChanged([this,cancelCapture](auto&&,auto&&){if(!syncing_&&cancelCapture)cancelCapture();for(size_t i=0;i<panels_.size();++i)panels_[i].Visibility(Categories().SelectedIndex()==static_cast<int>(i)?Visibility::Visible:Visibility::Collapsed);});Categories().SelectedIndex(0);
  using S=miniwindow::AppSettings;
  Boolean(panels_[0],L"最小化到托盘",&S::useSystemTray);Number(panels_[0],L"边缘吸附距离",&S::snapThreshold,0,200);Boolean(panels_[0],L"最大化顶部拖动",&S::maximizedTopDragEnabled);Boolean(panels_[0],L"组合键＋滚轮调整窗口大小",&S::windowWheelEnabled);
  panels_[0].Children().Append(miniwindow::ui::Text(L"普通窗口有焦点时，每格调整 5%；组合键在“快捷键”中选择。"));

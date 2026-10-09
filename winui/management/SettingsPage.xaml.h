@@ -5,7 +5,7 @@
 #include <set>
 namespace winrt::MiniWindow::implementation {
 struct SettingsPage:SettingsPageT<SettingsPage>{
- SettingsPage();void Bind(miniwindow::AppCoordinator&,std::function<void(miniwindow::HotkeyAction)>,std::function<void()>);
+ SettingsPage();void Bind(miniwindow::AppCoordinator&,std::function<void(miniwindow::HotkeyAction)>,std::function<void()>,std::function<void()> cancelCapture={});
  void Refresh();bool Dirty()const{return !dirty_.empty();}Windows::Foundation::IAsyncOperation<bool> CanLeaveAsync();
 private:
  using Panel=Microsoft::UI::Xaml::Controls::StackPanel;

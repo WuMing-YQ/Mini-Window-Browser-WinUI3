@@ -256,7 +256,7 @@ void MainWindow::ShowMoreMenu(){
     items.Append(MenuCommand(L"退出",[weak=get_weak()]{if(auto self=weak.get())self->Close();}));flyout.ShowAt(MoreButton());
 }
 void MainWindow::OpenManagement(miniwindow::ManagementPage page){
-    if(!management_){management_=make_self<ManagementWindow>();management_->Bind(hwnd_,*coordinator_,[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_)self->RefreshOwnedFocus();},[weak=get_weak()](UINT key,UINT modifiers){if(auto self=weak.get();self&&!self->closed_)return self->input_->CaptureKey(key,modifiers);return false;},[weak=get_weak()](auto action){if(auto self=weak.get();self&&!self->closed_)self->input_->BeginCapture(action);},[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_)self->OpenImmersionPanel();});}
+    if(!management_){management_=make_self<ManagementWindow>();management_->Bind(hwnd_,*coordinator_,[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_)self->RefreshOwnedFocus();},[weak=get_weak()](UINT key,UINT modifiers){if(auto self=weak.get();self&&!self->closed_)return self->input_->CaptureKey(key,modifiers);return false;},[weak=get_weak()](auto action){if(auto self=weak.get();self&&!self->closed_)self->input_->BeginCapture(action);},[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_)self->OpenImmersionPanel();},[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_&&self->input_)self->input_->CancelCapture();});}
     input_->CancelGesture();management_->Open(page);
 }
 void MainWindow::OpenImmersionPanel(){

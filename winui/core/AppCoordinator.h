@@ -20,6 +20,7 @@ public:
     void OnHotkeyErrors(std::vector<std::wstring>);
     void OnCaptureStatus(std::wstring text){snapshot_.captureStatus=std::move(text);Publish();}
     void OpenBookmark(size_t);
+    std::optional<size_t> BookmarkIndex(uint64_t id)const;
     OperationResult SaveBookmark(std::optional<size_t>,Bookmark);
     OperationResult DeleteBookmark(size_t);
     OperationResult SaveCurrentPreset(std::wstring);
@@ -39,7 +40,8 @@ private:
     OperationResult CommitRuntime(AppState);
     xiaochuang::RenderMode runningRender_=xiaochuang::RenderMode::AutomaticGpu;
     std::function<OperationResult(HotkeyAction,const HotkeyBinding&)> hotkeyValidator_;
-    OperationResult CommitCollection(AppState);
+    OperationResult CommitCollection(AppState,std::optional<std::vector<uint64_t>> ids={});
+    void InitializeBookmarkIds();uint64_t nextBookmarkId_=1;
     OperationResult ValidatePresetName(std::wstring&,std::optional<size_t> ignore={});
     OperationResult Finish(OperationResult result){Publish(result);return result;}
     void NavigateActive();
