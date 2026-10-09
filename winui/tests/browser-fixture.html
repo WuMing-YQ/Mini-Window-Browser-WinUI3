@@ -1,0 +1,11 @@
+<!doctype html><meta charset="utf-8"><title>小窗浏览器桌面测试</title>
+<style>body{font:16px system-ui;margin:24px;background:#edf3ef;color:#163d29}video{display:block;width:75%;max-width:640px;background:#111}input{padding:10px;font:inherit}main{height:1800px}</style>
+<h1>浏览器桌面测试</h1><p>播放计数应持续增加；输入框用于输入保护检查。网页滚轮应正常滚动。</p>
+<input placeholder="在这里输入中文 / Ctrl+Alt+滚轮"><button onclick="document.querySelector('video').requestFullscreen()">视频全屏</button>
+<video muted autoplay controls playsinline></video><div id="status"></div><main></main>
+<script>
+const canvas=document.createElement('canvas');canvas.width=640;canvas.height=360;
+const context=canvas.getContext('2d');let frames=0;
+function draw(){context.fillStyle='#12382b';context.fillRect(0,0,640,360);context.fillStyle='#67dca2';context.font='40px system-ui';context.fillText('Mini Window '+(++frames),30,180);document.querySelector('#status').textContent='frames='+frames+' viewport='+innerWidth+'×'+innerHeight;requestAnimationFrame(draw)}draw();
+const video=document.querySelector('video');video.srcObject=canvas.captureStream(24);video.play();
+</script>

@@ -40,9 +40,9 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
-    <Link><SubSystem>Console</SubSystem></Link>
+    <Link><SubSystem>Console</SubSystem><AdditionalDependencies>windowsapp.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
   </ItemDefinitionGroup>
   <PropertyGroup><TargetName>WinUICore.Tests</TargetName></PropertyGroup>
-  <ItemGroup><ClCompile Include="..\core\AppCoordinator.cpp"/><ClCompile Include="..\core\SessionController.cpp"/><ClCompile Include="TestMain.cpp"/><ClCompile Include="SessionTests.cpp"/><ClCompile Include="CoordinatorTests.cpp"/><ClCompile Include="..\..\src\ConfigStore.cpp"/></ItemGroup>
+  <ItemGroup><ClCompile Include="..\core\AppCoordinator.cpp"/><ClCompile Include="..\core\SessionController.cpp"/><ClCompile Include="..\browser\PageSignals.cpp"/><ClCompile Include="WebLifecycleTests.cpp"/><ClCompile Include="PageSignalsTests.cpp"/><ClCompile Include="TestMain.cpp"/><ClCompile Include="SessionTests.cpp"/><ClCompile Include="CoordinatorTests.cpp"/><ClCompile Include="..\..\src\ConfigStore.cpp"/></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>
