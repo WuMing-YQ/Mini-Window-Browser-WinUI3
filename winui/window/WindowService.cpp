@@ -36,6 +36,7 @@ OperationResult WindowService::SetMode(WindowMode mode) {
 OperationResult WindowService::SetHidden(bool hidden) {return Change(hidden?WindowMode::Hidden:(controller_.IsImmersive()?(settings_.immersionStyle==ImmersionStyle::Hole?WindowMode::ImmersionHole:WindowMode::ImmersionAutoHide):(controller_.IsSeamlessMaximized()?WindowMode::Maximized:WindowMode::Normal)),[&]{controller_.SetHidden(hidden);});}
 OperationResult WindowService::RestoreNormal(){return SetMode(WindowMode::Normal);}
 OperationResult WindowService::ApplyGeometry(RECT rect,bool maximized){return Change(maximized?WindowMode::Maximized:WindowMode::Normal,[&]{controller_.SetHidden(false);controller_.ApplyPresetGeometry(rect,maximized);});}
+OperationResult WindowService::ResizeNormal(RECT rect){if(controller_.Mode()!=WindowMode::Normal||controller_.IsHidden()||IsIconic(hwnd_))return {false,L"当前窗口不允许滚轮调整大小。"};return Change(WindowMode::Normal,[&]{controller_.RestoreGeometry(rect);controller_.UpdateNormalRectFromWindow();});}
 OperationResult WindowService::RefreshVisuals(){return Change(controller_.Mode(),[&]{controller_.SetSystemTray(settings_.useSystemTray);controller_.RefreshVisualState();});}
 OperationResult WindowService::RestoreForDrag(POINT cursor) {
     if(!settings_.maximizedTopDragEnabled||controller_.IsHidden()||!controller_.IsSeamlessMaximized())return {false,L"最大化顶部拖动未启用。"};

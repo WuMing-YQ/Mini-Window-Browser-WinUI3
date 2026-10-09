@@ -12,6 +12,7 @@
 #include "../src/ConfigStore.h"
 #include <microsoft.ui.xaml.window.h>
 #include <winrt/Windows.System.h>
+#include <winrt/Microsoft.UI.Input.h>
 #include <cmath>
 #include <cwctype>
 #include <winrt/Microsoft.UI.Windowing.h>
@@ -58,6 +59,8 @@ MainWindow::MainWindow() {
     Root().PreviewKeyDown([weak=get_weak()](auto&&,Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& args){if(auto self=weak.get();self&&!self->closed_&&self->input_&&self->input_->CaptureKey(static_cast<UINT>(args.Key()),miniwindow::CurrentKeyModifiers()))args.Handled(true);});
     input_->SetCaptureHandler([weak=get_weak()](auto action,auto binding){if(auto self=weak.get();self&&!self->closed_)self->coordinator_->UpdateHotkey(action,binding);});
     coordinator_->SetHotkeyValidator([weak=get_weak()](auto action,const auto& binding){if(auto self=weak.get();self&&!self->closed_)return self->input_->ValidateBinding(action,binding);return miniwindow::OperationResult{false,L"窗口已关闭。"};});
+    input_->SetWheelHandler([weak=get_weak()](int steps)->miniwindow::OperationResult{if(auto self=weak.get();self&&!self->closed_){RECT current{};MONITORINFO monitor{sizeof(monitor)};if(!GetWindowRect(self->hwnd_,&current)||!GetMonitorInfoW(MonitorFromWindow(self->hwnd_,MONITOR_DEFAULTTONEAREST),&monitor))return {false,L"无法读取窗口工作区。"};const auto dpi=GetDpiForWindow(self->hwnd_);const auto target=miniwindow::ResizeWindowBySteps(current,steps,monitor.rcWork,{MulDiv(160,dpi,96),MulDiv(120,dpi,96)});return self->windowService_->ResizeNormal(target);}return {false,L"窗口已关闭。"};});
+    Root().AddHandler(Microsoft::UI::Xaml::UIElement::PointerWheelChangedEvent(),box_value(Microsoft::UI::Xaml::Input::PointerEventHandler([weak=get_weak()](auto&&,Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args){if(auto self=weak.get();self&&!self->closed_){const auto point=args.GetCurrentPoint(self->Root());if(!point.Properties().IsHorizontalMouseWheel()&&self->input_->TryHandleWheel(point.Properties().MouseWheelDelta(),miniwindow::CurrentKeyModifiers()))args.Handled(true);}})),true);
     input_->Start();
     Root().Loaded([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get();self&&!self->closed_)self->StartBrowser();});
     Closed([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get()){self->closed_=true;if(self->management_)self->management_->Shutdown();if(self->immersionPanel_)self->immersionPanel_->Shutdown();if(self->coordinator_)self->coordinator_->Subscribe({});self->browserPort_.host=nullptr;if(self->input_)self->input_->Stop();self->systemTheme_.ColorValuesChanged(self->themeToken_);RemoveWindowSubclass(self->hwnd_,WindowProcedure,1);self->windowService_.reset();self->tray_.reset();if(self->browser_)self->browser_->Close();if(self->initialization_)self->initialization_.Cancel();self->browser_.reset();if(self->profileLock_){CloseHandle(self->profileLock_);self->profileLock_=nullptr;}}});
@@ -226,7 +229,7 @@ void MainWindow::UpdateChromeLayout(){
     BackButton().Visibility(wide?Visibility::Visible:Visibility::Collapsed);RefreshButton().Visibility(wide?Visibility::Visible:Visibility::Collapsed);
     Tabs().Visibility(wide?Visibility::Visible:Visibility::Collapsed);TabMenuButton().Visibility(wide?Visibility::Collapsed:Visibility::Visible);
     StatusText().Visibility(full&&!state_.immersionActive&&!state_.windowHidden&&Root().ActualHeight()>=240?Visibility::Visible:Visibility::Collapsed);
-    StatusText().Text(L"普通浏览  ·  Ctrl+Alt+滚轮调整窗口大小");
+    StatusText().Text(state_.settings.windowWheelEnabled?L"普通浏览  ·  "+miniwindow::WheelModifierLabel(state_.settings.windowWheelModifiers)+L"+滚轮调整窗口大小":L"普通浏览");
 }
 void MainWindow::FillBookmarkMenu(Windows::Foundation::Collections::IVector<Microsoft::UI::Xaml::Controls::MenuFlyoutItemBase> const& items){
     const auto& bookmarks=coordinator_->Snapshot().state.bookmarks;

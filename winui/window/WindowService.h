@@ -30,6 +30,7 @@ public:
     void OnWebFullscreen(bool,double aspect=0);
     OperationResult ApplyGeometry(RECT,bool) override;
     OperationResult RefreshVisuals();
+    OperationResult ResizeNormal(RECT rect);
     OperationResult RestoreForDrag(POINT);
     void ReassertTopmost(){controller_.ReassertTopmost();}
 private:
