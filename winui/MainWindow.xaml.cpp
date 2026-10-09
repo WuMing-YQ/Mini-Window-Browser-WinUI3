@@ -35,13 +35,13 @@ MainWindow::MainWindow() {
     tray_=std::make_unique<miniwindow::TrayController>(hwnd_,[weak=get_weak()](miniwindow::TrayAction action){if(auto self=weak.get();self&&!self->closed_){
         if(action==miniwindow::TrayAction::Exit){self->Close();return;}
         if(action==miniwindow::TrayAction::Settings){self->OpenManagement(miniwindow::ManagementPage::Settings);return;}
-        if(action==miniwindow::TrayAction::ImmersionControls){self->OpenManagement(miniwindow::ManagementPage::Settings);return;}
+        if(action==miniwindow::TrayAction::ImmersionControls){self->OpenImmersionPanel();return;}
         auto result=action==miniwindow::TrayAction::Show?self->windowService_->SetHidden(false):self->windowService_->RestoreNormal();
         self->SyncWindowState();if(!result.ok)self->ShowError(result.message);
     }});
     windowService_=std::make_unique<miniwindow::WindowService>(hwnd_,state_.settings,[weak=get_weak()](bool visible){if(auto self=weak.get())self->Chrome().Visibility(visible?Microsoft::UI::Xaml::Visibility::Visible:Microsoft::UI::Xaml::Visibility::Collapsed);},[weak=get_weak()]{if(auto self=weak.get())self->LayoutBrowser();});
     windowService_->SetFrameHandler([weak=get_weak()](auto mode){if(auto self=weak.get())self->ApplyFrame(mode);});
-    windowService_->SetThemeHandler([weak=get_weak()](auto mode){if(auto self=weak.get()){miniwindow::ThemeSync::Apply(self->hwnd_,mode,self->Root(),self->AppWindow());if(self->management_)self->management_->RefreshTheme();}});
+    windowService_->SetThemeHandler([weak=get_weak()](auto mode){if(auto self=weak.get()){miniwindow::ThemeSync::Apply(self->hwnd_,mode,self->Root(),self->AppWindow());if(self->management_)self->management_->RefreshTheme();if(self->immersionPanel_)self->immersionPanel_->RefreshTheme();}});
     windowService_->SetRecoveryHandler([weak=get_weak()](bool immersive,bool hidden,bool minimize){if(auto self=weak.get()){self->tray_->Sync(immersive,hidden,minimize);return !miniwindow::NeedsTray(immersive,hidden,minimize)||self->tray_->Available();}return false;});
     windowService_->SetErrorHandler([weak=get_weak()](auto error){if(auto self=weak.get()){self->SyncWindowState();self->ShowError(error);}});
     windowService_->Initialize(state_.session.normalRect,state_.session.maximized);windowService_->RefreshTheme(state_.settings.themeMode);
@@ -60,7 +60,7 @@ MainWindow::MainWindow() {
     coordinator_->SetHotkeyValidator([weak=get_weak()](auto action,const auto& binding){if(auto self=weak.get();self&&!self->closed_)return self->input_->ValidateBinding(action,binding);return miniwindow::OperationResult{false,L"窗口已关闭。"};});
     input_->Start();
     Root().Loaded([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get();self&&!self->closed_)self->StartBrowser();});
-    Closed([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get()){self->closed_=true;if(self->management_)self->management_->Shutdown();if(self->coordinator_)self->coordinator_->Subscribe({});self->browserPort_.host=nullptr;if(self->input_)self->input_->Stop();self->systemTheme_.ColorValuesChanged(self->themeToken_);RemoveWindowSubclass(self->hwnd_,WindowProcedure,1);self->windowService_.reset();self->tray_.reset();if(self->browser_)self->browser_->Close();if(self->initialization_)self->initialization_.Cancel();self->browser_.reset();if(self->profileLock_){CloseHandle(self->profileLock_);self->profileLock_=nullptr;}}});
+    Closed([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get()){self->closed_=true;if(self->management_)self->management_->Shutdown();if(self->immersionPanel_)self->immersionPanel_->Shutdown();if(self->coordinator_)self->coordinator_->Subscribe({});self->browserPort_.host=nullptr;if(self->input_)self->input_->Stop();self->systemTheme_.ColorValuesChanged(self->themeToken_);RemoveWindowSubclass(self->hwnd_,WindowProcedure,1);self->windowService_.reset();self->tray_.reset();if(self->browser_)self->browser_->Close();if(self->initialization_)self->initialization_.Cancel();self->browser_.reset();if(self->profileLock_){CloseHandle(self->profileLock_);self->profileLock_=nullptr;}}});
 }
 void MainWindow::ShowError(const std::wstring& error) {const auto message=configError_+(configError_.empty()?L"":L"\n")+inputError_+error;ErrorText().Text(message);ErrorPanel().Visibility(message.empty()?Microsoft::UI::Xaml::Visibility::Collapsed:Microsoft::UI::Xaml::Visibility::Visible);}
 bool MainWindow::AcquireProfile(const std::filesystem::path& path) {
@@ -156,7 +156,7 @@ LRESULT CALLBACK MainWindow::WindowProcedure(HWND hwnd,UINT message,WPARAM param
     return DefSubclassProc(hwnd,message,parameter,data);
 }
 
-void MainWindow::RefreshOwnedFocus(){if(!input_)return;const auto foreground=GetAncestor(GetForegroundWindow(),GA_ROOT);const bool ownMain=foreground==hwnd_&&!webFocused_&&miniwindow::HasOwnedTextFocus(Root().XamlRoot());input_->SetOwnedTextFocus(ownMain||(management_&&management_->ForegroundTextFocus()));}
+void MainWindow::RefreshOwnedFocus(){if(!input_)return;const auto foreground=GetAncestor(GetForegroundWindow(),GA_ROOT);const bool ownMain=foreground==hwnd_&&!webFocused_&&miniwindow::HasOwnedTextFocus(Root().XamlRoot());input_->SetOwnedTextFocus(ownMain||(management_&&management_->ForegroundTextFocus())||(immersionPanel_&&immersionPanel_->ForegroundTextFocus()));}
 void MainWindow::HandleHotkey(miniwindow::HotkeyAction action,miniwindow::HotkeyGesture gesture) {
     using miniwindow::HotkeyAction;using miniwindow::HotkeyGesture;using miniwindow::MediaCommand;
     if(action==HotkeyAction::Immersion){ImmersionClick(nullptr,nullptr);return;}
@@ -217,7 +217,7 @@ void MainWindow::RenderSnapshot(const miniwindow::AppSnapshot& snapshot){
     Tabs().SelectedIndex(state.currentTabIndex);syncingTabs_=false;
     BackButton().IsEnabled(browser_&&browser_->CanGoBack());RefreshButton().Content(box_value(snapshot.loading?L"\xE71A":L"\xE72C"));
     const bool bookmarked=std::any_of(state.bookmarks.begin(),state.bookmarks.end(),[&](const auto& item){return item.url==active.url;});StarButton().Content(box_value(bookmarked?L"\xE735":L"\xE734"));
-    if(management_)management_->Refresh();UpdateChromeLayout();
+    if(management_)management_->Refresh();if(immersionPanel_)immersionPanel_->Refresh();UpdateChromeLayout();
 }
 void MainWindow::UpdateChromeLayout(){
     const auto layout=miniwindow::CalculateChromeLayout(Root().ActualWidth());using Visibility=Microsoft::UI::Xaml::Visibility;
@@ -243,7 +243,7 @@ void MainWindow::ShowMoreMenu(){
     items.Append(MenuCommand(L"收藏当前网页",[weak=get_weak()]{if(auto self=weak.get())self->ToggleBookmarkAsync();}));
     Microsoft::UI::Xaml::Controls::MenuFlyoutSubItem bookmarks;bookmarks.Text(L"书签");FillBookmarkMenu(bookmarks.Items());items.Append(bookmarks);
     items.Append(MenuCommand(L"场景预设",[weak=get_weak()]{if(auto self=weak.get())self->OpenManagement(miniwindow::ManagementPage::Presets);}));
-    items.Append(MenuCommand(L"沉浸控制…",[weak=get_weak()]{if(auto self=weak.get())self->OpenManagement(miniwindow::ManagementPage::Settings);}));
+    items.Append(MenuCommand(L"沉浸控制…",[weak=get_weak()]{if(auto self=weak.get())self->OpenImmersionPanel();}));
     items.Append(MenuCommand(L"设置",[weak=get_weak()]{if(auto self=weak.get())self->OpenManagement(miniwindow::ManagementPage::Settings);}));
     items.Append(MenuCommand(L"恢复普通模式",[weak=get_weak()]{if(auto self=weak.get()){self->coordinator_->RestoreNormal();self->SyncWindowState();}}));
     items.Append(MenuCommand(L"隐藏窗口",[weak=get_weak()]{if(auto self=weak.get())self->HideClick(nullptr,nullptr);}));
@@ -251,8 +251,12 @@ void MainWindow::ShowMoreMenu(){
     items.Append(MenuCommand(L"退出",[weak=get_weak()]{if(auto self=weak.get())self->Close();}));flyout.ShowAt(MoreButton());
 }
 void MainWindow::OpenManagement(miniwindow::ManagementPage page){
-    if(!management_){management_=make_self<ManagementWindow>();management_->Bind(hwnd_,*coordinator_,[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_)self->RefreshOwnedFocus();},[weak=get_weak()](UINT key,UINT modifiers){if(auto self=weak.get();self&&!self->closed_)return self->input_->CaptureKey(key,modifiers);return false;},[weak=get_weak()](auto action){if(auto self=weak.get();self&&!self->closed_)self->input_->BeginCapture(action);});}
+    if(!management_){management_=make_self<ManagementWindow>();management_->Bind(hwnd_,*coordinator_,[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_)self->RefreshOwnedFocus();},[weak=get_weak()](UINT key,UINT modifiers){if(auto self=weak.get();self&&!self->closed_)return self->input_->CaptureKey(key,modifiers);return false;},[weak=get_weak()](auto action){if(auto self=weak.get();self&&!self->closed_)self->input_->BeginCapture(action);},[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_)self->OpenImmersionPanel();});}
     input_->CancelGesture();management_->Open(page);
+}
+void MainWindow::OpenImmersionPanel(){
+ if(!immersionPanel_){immersionPanel_=make_self<ImmersionPanel>();immersionPanel_->Bind(hwnd_,*coordinator_,[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_)self->RefreshOwnedFocus();},[weak=get_weak()](UINT key,UINT modifiers){if(auto self=weak.get();self&&!self->closed_)return self->input_->CaptureKey(key,modifiers);return false;});windowService_->SetCursorExclusion([weak=get_weak()](POINT point){if(auto self=weak.get();self&&self->immersionPanel_)return self->immersionPanel_->ContainsScreenPoint(point);return false;});}
+ input_->CancelGesture();immersionPanel_->Open();
 }
 Windows::Foundation::IAsyncAction MainWindow::ToggleBookmarkAsync(){auto lifetime=get_strong();const auto tab=state_.tabs[static_cast<size_t>(state_.currentTabIndex)];for(size_t i=0;i<state_.bookmarks.size();++i)if(state_.bookmarks[i].url==tab.url){if(co_await miniwindow::ui::Confirm(Root().XamlRoot(),L"取消收藏？",state_.bookmarks[i].title,L"取消收藏"))coordinator_->DeleteBookmark(i);co_return;}coordinator_->SaveBookmark({}, {tab.title.empty()?tab.url:tab.title,tab.url});}
 Windows::Foundation::IAsyncAction MainWindow::RequestCloseAsync(){auto lifetime=get_strong();try{if(management_&&!co_await management_->CanLeaveAsync()){closePending_=false;co_return;}state_.session.normalRect=windowService_->NormalRect();state_.session.maximized=windowService_->VisibleMode()==miniwindow::WindowMode::Maximized;const auto result=settings_->Save(state_);if(result.ok){closeApproved_=true;Close();}else{windowService_->RestoreNormal();SyncWindowState();co_await ConfirmCloseAsync(result.message);}}catch(const hresult_error& error){ShowError(std::wstring(error.message()));}closePending_=false;}

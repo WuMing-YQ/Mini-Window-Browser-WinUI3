@@ -1,0 +1,11 @@
+#include "Test.h"
+#include "../core/AppCoordinator.h"
+namespace{struct Browser:miniwindow::IBrowserPort{int navigations=0,media=0;miniwindow::OperationResult Navigate(const std::wstring&)override{++navigations;return {};}void SetVisible(bool)override{}void ExecuteMedia(miniwindow::MediaCommand,int)override{++media;}void Close()override{}};struct Window:miniwindow::IWindowPort{miniwindow::WindowMode mode=miniwindow::WindowMode::Normal;miniwindow::OperationResult SetMode(miniwindow::WindowMode value)override{mode=value;return {};}miniwindow::OperationResult SetHidden(bool)override{return {};}miniwindow::OperationResult RestoreNormal()override{mode=miniwindow::WindowMode::Normal;return {};}RECT NormalRect()const override{return {100,100,800,600};}};struct Store:miniwindow::ISettingsPort{int writes=0;miniwindow::OperationResult Save(const miniwindow::AppState&)override{++writes;return {};}};}
+void ImmersionPanelStateTests(){using namespace miniwindow;Browser browser;Window window;Store store;AppState state;AppCoordinator app(browser,window,store,state);
+ CHECK(app.UpdateImmersion(ImmersionStyle::AutoHide,80,50,400,false).ok);CHECK(state.settings.autoHideOpacityPercent==80);CHECK(state.settings.holeOpacityPercent==100);CHECK(store.writes==0);
+ app.ToggleImmersion();CHECK(state.immersionActive);CHECK(app.UpdateImmersion(ImmersionStyle::AutoHide,0,100,400,false).ok);CHECK(state.immersionActive);CHECK(browser.navigations==0&&browser.media==0);
+ CHECK(app.UpdateImmersion(ImmersionStyle::Hole,70,20,0,false).ok);CHECK(state.settings.holeOpacityPercent==70);CHECK(state.settings.autoHideOpacityPercent==0);CHECK(state.windowMode==WindowMode::ImmersionHole);
+ CHECK(!app.UpdateImmersion(ImmersionStyle::Hole,101,20,400,false).ok);CHECK(state.settings.holeOpacityPercent==70);CHECK(!app.UpdateImmersion(ImmersionStyle::Hole,70,20,4001,false).ok);
+ CHECK(app.FlushSettings().ok);CHECK(store.writes==1);app.RestoreNormal();CHECK(!state.immersionActive);CHECK(window.mode==WindowMode::Normal);
+ app.ToggleImmersion();app.SetRuntimeHandler([]{return OperationResult{false,L"native failure"};});CHECK(!app.UpdateImmersion(ImmersionStyle::AutoHide,80,50,400,false).ok);CHECK(!state.immersionActive);CHECK(state.windowMode==WindowMode::Normal);CHECK(!app.Snapshot().error.empty());
+}

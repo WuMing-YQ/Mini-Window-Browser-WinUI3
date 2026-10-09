@@ -31,6 +31,7 @@ void WindowAdapterTests() {
         CHECK(service.SetHidden(true).ok && service.Hidden());
         CHECK(service.RecoveryAvailable());
         CHECK(service.RefreshVisuals().ok);CHECK(!IsWindowVisible(hwnd));
+        settings.immersionStyle=miniwindow::ImmersionStyle::Hole;CHECK(service.RefreshVisuals().ok);CHECK(!IsWindowVisible(hwnd));
         CHECK(service.RestoreNormal().ok);
         CHECK(service.Mode()==miniwindow::WindowMode::Normal && !service.Hidden() && chrome);
         const auto ex=GetWindowLongPtrW(hwnd,GWL_EXSTYLE);

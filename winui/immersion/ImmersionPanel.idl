@@ -1,0 +1,1 @@
+namespace MiniWindow { [default_interface] runtimeclass ImmersionPanel : Microsoft.UI.Xaml.Window { ImmersionPanel(); } }

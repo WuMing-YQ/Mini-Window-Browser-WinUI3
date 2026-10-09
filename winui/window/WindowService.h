@@ -17,6 +17,7 @@ public:
     bool Hidden() const {return controller_.IsHidden();}
     bool Immersive() const {return controller_.IsImmersive();}
     bool RecoveryAvailable() const {return recoveryForced_||Immersive()||Hidden()||settings_.useSystemTray;}
+    void SetCursorExclusion(std::function<bool(POINT)> excluded){controller_.SetCursorExclusion(std::move(excluded));}
     void SetOperations(xiaochuang::WindowOperations operations){controller_.SetOperations(std::move(operations));}
     void SetFrameHandler(std::function<void(WindowMode)> handler){frame_=std::move(handler);}
     void SetThemeHandler(std::function<void(xiaochuang::ThemeMode)> handler){themeHandler_=std::move(handler);}

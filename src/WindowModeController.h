@@ -24,6 +24,7 @@ public:
                     int chromeHeight, VisibilityCallback chromeVisibility,
                     LayoutCallback layoutCallback);
     void Shutdown();
+    void SetCursorExclusion(std::function<bool(POINT)> excluded){cursorExcluded_=std::move(excluded);lastCursor_={LONG_MIN,LONG_MIN};}
     void SetOperations(WindowOperations operations) {operations_=std::move(operations);}
     void ClearOperationError() const {operationError_.clear();}
     const std::wstring& OperationError() const noexcept {return operationError_;}
@@ -64,7 +65,7 @@ private:
     void ApplyVisibleMode(WindowMode mode, bool restoreGeometry);
     void ApplyStyle(DWORD style, DWORD exStyle) const;
     RECT CurrentMonitorRect(bool workArea) const;
-    BYTE ConfiguredAlpha() const;
+    BYTE ConfiguredAlpha(bool cursorInside=false) const;
     void ClearRegionAndOpacity() const;
     RECT EnsureVisible(RECT rect, bool useWorkArea = true) const;
 
@@ -91,6 +92,8 @@ private:
     double webFullscreenAspect_ = 0.0;
     POINT lastCursor_{LONG_MIN, LONG_MIN};
     bool holeOutsideWindow_ = false;
+    RECT lastHoleRect_{};int lastHoleRadius_=-1;bool lastExcluded_=false;
+    std::function<bool(POINT)> cursorExcluded_;
     bool hoverCandidate_ = false;
     bool hoverApplied_ = false;
     ULONGLONG hoverCandidateSince_ = 0;

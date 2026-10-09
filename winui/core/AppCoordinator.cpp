@@ -136,7 +136,7 @@ OperationResult AppCoordinator::ApplyPreset(size_t index){
 OperationResult AppCoordinator::CommitRuntime(AppState next){
  const auto previous=state_;next.session.normalRect=window_.NormalRect();next.session.maximized=state_.windowMode==WindowMode::Maximized;state_=std::move(next);
  auto result=runtime_?runtime_():OperationResult{};
- if(result.ok)result=settings_.Save(state_);
+ if(result.ok){if(state_.immersionActive)state_.windowMode=state_.settings.immersionStyle==ImmersionStyle::Hole?WindowMode::ImmersionHole:WindowMode::ImmersionAutoHide;result=settings_.Save(state_);}
  if(!result.ok){state_=previous;if(runtime_){auto rollback=runtime_();if(!rollback.ok)result.message+=L" 恢复失败："+rollback.message;}}
  return Finish(result);
 }
@@ -159,5 +159,14 @@ void AppCoordinator::RequestDiagnostics(std::function<void(std::wstring)> done){
  auto text=xiaochuang::BuildSystemDiagnostics(state_,browser_.RuntimeVersion(),state_.windowMode);
  text+=L"WinUI 3 native interface\r\nHole basis: "+std::to_wstring(state_.settings.holeOpacityPercent)+L"%\r\nHover reduction: "+std::to_wstring(state_.settings.hoverReductionPercent)+L"%\r\nRunning render: "+(runningRender_==xiaochuang::RenderMode::AutomaticGpu?std::wstring(L"Automatic GPU"):std::wstring(L"Software compatibility"))+L"\r\nPending restart: "+(snapshot_.pendingRestart?std::wstring(L"yes"):std::wstring(L"no"))+L"\r\n";
  browser_.RequestDiagnostics([done=std::move(done),text=std::move(text)](std::wstring media){done(text+L"Media: "+xiaochuang::DecodeExecuteScriptString(media));});
+}
+OperationResult AppCoordinator::FlushSettings(){state_.session.normalRect=window_.NormalRect();state_.session.maximized=state_.windowMode==WindowMode::Maximized;return Finish(settings_.Save(state_));}
+OperationResult AppCoordinator::UpdateImmersion(ImmersionStyle style,int basis,int reduction,int radius,bool persist){
+ auto draft=state_.settings;draft.immersionStyle=style;if(style==ImmersionStyle::Hole)draft.holeOpacityPercent=basis;else draft.autoHideOpacityPercent=basis;draft.hoverReductionPercent=reduction;draft.holeRadius=radius;
+ auto valid=ValidateSettings(draft);if(!valid.ok)return Finish(valid);
+ const auto previous=state_.settings;state_.settings=std::move(draft);if(state_.immersionActive)state_.windowMode=style==ImmersionStyle::Hole?WindowMode::ImmersionHole:WindowMode::ImmersionAutoHide;
+ auto result=runtime_?runtime_():OperationResult{};
+ if(!result.ok){state_.settings=previous;auto restore=window_.RestoreNormal();if(restore.ok){state_.windowMode=WindowMode::Normal;state_.immersionActive=false;state_.windowHidden=false;browser_.SetVisible(true);}else result.message+=L" 恢复失败："+restore.message;return Finish(result);}
+ if(persist)return FlushSettings();return Finish({});
 }
 }

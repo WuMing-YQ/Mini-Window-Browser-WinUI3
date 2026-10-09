@@ -9,6 +9,7 @@
 #include "core/AppCoordinator.h"
 #include "browser/BrowserPort.h"
 #include "management/ManagementWindow.xaml.h"
+#include "immersion/ImmersionPanel.xaml.h"
 namespace winrt::MiniWindow::implementation {
 struct MainWindow : MainWindowT<MainWindow> {
     MainWindow();
@@ -22,7 +23,7 @@ struct MainWindow : MainWindowT<MainWindow> {
 private:
     static LRESULT CALLBACK WindowProcedure(HWND,UINT,WPARAM,LPARAM,UINT_PTR,DWORD_PTR);
     void InitializeChrome();void RenderSnapshot(const miniwindow::AppSnapshot&);void UpdateChromeLayout();
-    void OpenManagement(miniwindow::ManagementPage);
+    void OpenManagement(miniwindow::ManagementPage);void OpenImmersionPanel();
     void ShowBookmarks(Microsoft::UI::Xaml::FrameworkElement const&);
     void FillBookmarkMenu(Windows::Foundation::Collections::IVector<Microsoft::UI::Xaml::Controls::MenuFlyoutItemBase> const&);
     void ShowTabMenu();void ShowMoreMenu();
@@ -48,7 +49,7 @@ private:
     std::unique_ptr<miniwindow::InputService> input_;
     miniwindow::BrowserPort browserPort_;
     std::unique_ptr<miniwindow::AppCoordinator> coordinator_;
-    com_ptr<ManagementWindow> management_;
+    com_ptr<ManagementWindow> management_;com_ptr<ImmersionPanel> immersionPanel_;
     bool syncingTabs_=false;
     std::wstring renderedTabs_,renderedUrl_;
     int renderedTab_=-1;

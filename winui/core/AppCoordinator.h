@@ -27,6 +27,8 @@ public:
     OperationResult ApplyPreset(size_t);
     OperationResult DeletePreset(size_t);
     void SetRuntimeHandler(std::function<OperationResult()> handler){runtime_=std::move(handler);}
+    OperationResult UpdateImmersion(ImmersionStyle,int basis,int reduction,int radiusPhysicalPixels,bool persist=true);
+    OperationResult FlushSettings();
     OperationResult UpdateSettings(const AppSettings&);
     OperationResult UpdateHotkey(HotkeyAction,const HotkeyBinding&);
     OperationResult ResetDefaults();

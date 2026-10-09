@@ -1,0 +1,15 @@
+<Window x:Class="MiniWindow.ImmersionPanel" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="沉浸控制">
+<Grid x:Name="Root" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" Padding="24"><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch"><StackPanel Spacing="12">
+<TextBlock Text="沉浸控制" FontSize="24" FontWeight="SemiBold"/>
+<ComboBox x:Name="Mode" Header="模式" HorizontalAlignment="Stretch" AutomationProperties.Name="面板沉浸模式"><ComboBoxItem Content="鼠标挖孔"/><ComboBoxItem Content="移入减淡"/></ComboBox>
+<TextBlock Text="基础不透明度"/><Slider x:Name="Basis" Minimum="0" Maximum="100" StepFrequency="1" AutomationProperties.Name="基础不透明度滑块"/><TextBox x:Name="BasisInput" Header="基础不透明度 (%)" AutomationProperties.Name="面板基础不透明度"/>
+<TextBlock Text="移入时额外减淡的比例"/><Slider x:Name="Reduction" Minimum="0" Maximum="100" StepFrequency="1" AutomationProperties.Name="额外减淡比例滑块"/><TextBox x:Name="ReductionInput" Header="额外减淡比例 (%)" AutomationProperties.Name="面板额外减淡比例"/>
+<TextBox x:Name="RadiusInput" Header="挖孔半径（物理像素，0–4000）" AutomationProperties.Name="面板挖孔半径"/>
+<TextBlock x:Name="Formula" TextWrapping="Wrap" AutomationProperties.Name="不透明度计算"/>
+<TextBlock x:Name="Current" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.Name="当前显示不透明度"/>
+<Button x:Name="Toggle" Content="进入沉浸" HorizontalAlignment="Stretch" AutomationProperties.Name="面板切换沉浸"/>
+<Button x:Name="Restore" Content="恢复普通模式" HorizontalAlignment="Stretch" AutomationProperties.Name="面板恢复普通模式"/>
+<TextBlock Text="关闭面板会保持当前沉浸状态。完全透明时也可通过恢复按钮、快捷键或托盘找回窗口。" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+<TextBlock x:Name="Feedback" TextWrapping="Wrap" AutomationProperties.Name="沉浸反馈"/>
+</StackPanel></ScrollViewer></Grid>
+</Window>

@@ -1,4 +1,5 @@
 #include "WindowModeController.h"
+#include "ImmersionPolicy.h"
 
 #include "CoreLogic.h"
 
@@ -211,18 +212,21 @@ void WindowModeController::OnImmersionTimer() {
     if (!window_ || !settings_ || !IsImmersive() || hidden_) return;
     POINT cursor{};
     if (!GetCursorPos(&cursor)) return;
+    const bool excluded=cursorExcluded_&&cursorExcluded_(cursor);
     if (visibleMode_ == WindowMode::ImmersionHole) {
+        RECT physicalRect{};GetWindowRect(window_,&physicalRect);
         constexpr int kCursorQuantum = 4;
         cursor.x = (cursor.x / kCursorQuantum) * kCursorQuantum;
         cursor.y = (cursor.y / kCursorQuantum) * kCursorQuantum;
-        if (cursor.x == lastCursor_.x && cursor.y == lastCursor_.y) return;
+        if (cursor.x == lastCursor_.x && cursor.y == lastCursor_.y&&EqualRect(&physicalRect,&lastHoleRect_)&&lastHoleRadius_==settings_->holeRadius&&lastExcluded_==excluded) return;
+        lastHoleRect_=physicalRect;lastHoleRadius_=settings_->holeRadius;lastExcluded_=excluded;
         lastCursor_ = cursor;
         POINT client = cursor;
         ScreenToClient(window_, &client);
         RECT bounds{};
         GetClientRect(window_, &bounds);
         const int radius = std::max(0, settings_->holeRadius);
-        const bool outside = radius == 0 || client.x + radius <= bounds.left ||
+        const bool outside = excluded || radius == 0 || client.x + radius <= bounds.left ||
             client.x - radius >= bounds.right || client.y + radius <= bounds.top ||
             client.y - radius >= bounds.bottom;
         if (outside) {
@@ -257,12 +261,9 @@ void WindowModeController::OnImmersionTimer() {
         return;
     }
 
-    CURSORINFO cursorInfo{sizeof(cursorInfo)};
-    const bool cursorVisible = GetCursorInfo(&cursorInfo) &&
-        (cursorInfo.flags & CURSOR_SHOWING) != 0;
     RECT windowRect{};
     GetWindowRect(window_, &windowRect);
-    const bool candidate = cursorVisible && PtInRect(&windowRect, cursor) != FALSE;
+    const bool candidate = !excluded&&CursorWithin(windowRect,cursor);
     const ULONGLONG now = GetTickCount64();
     if (candidate != hoverCandidate_) {
         hoverCandidate_ = candidate;
@@ -270,7 +271,7 @@ void WindowModeController::OnImmersionTimer() {
     }
     if (hoverApplied_ != hoverCandidate_ && now - hoverCandidateSince_ >= 80) {
         hoverApplied_ = hoverCandidate_;
-        Alpha(window_, 0, hoverApplied_ ? 0 : ConfiguredAlpha(), LWA_ALPHA);
+        Alpha(window_, 0, ConfiguredAlpha(hoverApplied_), LWA_ALPHA);
     }
 }
 
@@ -324,7 +325,7 @@ void WindowModeController::RefreshVisualState() {
         Alpha(window_, 0, ConfiguredAlpha(), LWA_ALPHA);
         OnImmersionTimer();
     } else {
-        Alpha(window_, 0, hoverApplied_ ? 0 : ConfiguredAlpha(), LWA_ALPHA);
+        Alpha(window_, 0, ConfiguredAlpha(hoverApplied_), LWA_ALPHA);
     }
     ReassertTopmost();
 }
@@ -424,11 +425,10 @@ RECT WindowModeController::CurrentMonitorRect(bool workArea) const {
     return workArea ? info.rcWork : info.rcMonitor;
 }
 
-BYTE WindowModeController::ConfiguredAlpha() const {
-    if (!settings_) return 255;
-    if (visibleMode_ == WindowMode::ImmersionHole) return 255;
-    const int percent = settings_->autoHideOpacityPercent;
-    return static_cast<BYTE>(std::clamp((percent * 255 + 50) / 100, 0, 255));
+BYTE WindowModeController::ConfiguredAlpha(bool cursorInside) const {
+    if(!settings_)return 255;
+    const auto basis=visibleMode_==WindowMode::ImmersionHole?settings_->holeOpacityPercent:settings_->autoHideOpacityPercent;
+    return ToWindowAlpha(CalculateImmersionOpacity(visibleMode_,basis,settings_->hoverReductionPercent,cursorInside));
 }
 
 void WindowModeController::ClearRegionAndOpacity() const {
