@@ -200,8 +200,11 @@ void BrowserHost::Close() {
     s->view.reset();s->controller.reset();s->environment.reset();
     if(s->surface){DestroyWindow(s->surface);s->surface=nullptr;}
 }
-void BrowserHost::SetFixedZoom(bool enabled,int percent) {state_->settings.fixedWebZoomEnabled=enabled;state_->settings.fixedWebZoomPercent=percent;if(state_->controller){auto result=state_->zoom.Configure(state_->settings);if(FAILED(result))state_->Report(BrowserError(result));}}
-void BrowserHost::Configure(const AppSettings& settings) {state_->settings=settings;SetFixedZoom(settings.fixedWebZoomEnabled,settings.fixedWebZoomPercent);}
+OperationResult BrowserHost::SetFixedZoom(bool enabled,int percent){auto next=state_->settings;next.fixedWebZoomEnabled=enabled;next.fixedWebZoomPercent=percent;return Configure(next);}
+OperationResult BrowserHost::Configure(const AppSettings& settings){
+ if(state_->controller){const auto result=state_->zoom.Configure(settings);if(FAILED(result)){state_->zoom.Configure(state_->settings);return {false,BrowserError(result)};}}
+ state_->settings=settings;return {};
+}
 void BrowserHost::SetBounds(RECT bounds) {
     state_->bounds=bounds;
     if(state_->surface)SetWindowPos(state_->surface,HWND_TOP,bounds.left,bounds.top,
@@ -222,4 +225,5 @@ void BrowserHost::RequestDiagnostics(std::function<void(std::wstring)> completio
     const auto generation=s->generation;
     s->view->ExecuteScript(xiaochuang::MediaBridge::DiagnosticScript().c_str(),Callback<ICoreWebView2ExecuteScriptCompletedHandler>([weak=std::weak_ptr<State>(s),completion,generation](HRESULT hr,PCWSTR value)->HRESULT {if(auto s=weak.lock();s&&s->life.IsCurrent(generation)&&s->ready)completion(SUCCEEDED(hr)&&value?value:L"媒体诊断失败。");return S_OK;}).Get());
 }
+std::wstring BrowserHost::RuntimeVersion()const{wil::unique_cotaskmem_string version;if(state_->environment&&SUCCEEDED(state_->environment->get_BrowserVersionString(&version))&&version)return version.get();return {};}
 }

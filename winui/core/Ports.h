@@ -19,8 +19,8 @@ struct OperationResult { bool ok=true; std::wstring message; };
 struct AppSnapshot {
     uint64_t revision=1;
     AppState state;
-    bool browserReady=false, loading=false;
-    std::wstring error;
+    bool browserReady=false, loading=false, pendingRestart=false;
+    std::wstring error,captureStatus;
     std::vector<std::wstring> hotkeyErrors;
 };
 struct IBrowserPort {
@@ -29,6 +29,8 @@ struct IBrowserPort {
     virtual void SetVisible(bool)=0;
     virtual void ExecuteMedia(MediaCommand,int)=0;
     virtual void Close()=0;
+    virtual std::wstring RuntimeVersion()const{return {};}
+    virtual void RequestDiagnostics(std::function<void(std::wstring)> done){done(L"浏览器尚未就绪。");}
 };
 struct IWindowPort {
     virtual ~IWindowPort()=default;

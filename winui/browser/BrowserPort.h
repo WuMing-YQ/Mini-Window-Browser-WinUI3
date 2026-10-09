@@ -7,5 +7,7 @@ struct BrowserPort final:IBrowserPort {
  OperationResult Navigate(const std::wstring& url)override{return host?host->Navigate(url):OperationResult{false,L"浏览器正在初始化。"};}
  void SetVisible(bool visible)override{if(host)host->SetVisible(visible);}
  void ExecuteMedia(MediaCommand command,int rate)override{if(host)host->ExecuteMedia(command,rate);}
+ std::wstring RuntimeVersion()const override{return host?host->RuntimeVersion():L"";}
+ void RequestDiagnostics(std::function<void(std::wstring)> done)override{if(host)host->RequestDiagnostics(std::move(done));else done(L"浏览器尚未就绪。");}
  void Close()override{if(host)host->Close();}
 };}

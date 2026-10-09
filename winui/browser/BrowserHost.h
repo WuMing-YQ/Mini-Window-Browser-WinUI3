@@ -14,8 +14,8 @@ public:
     void SetVisible(bool) override;
     void ExecuteMedia(MediaCommand,int) override;
     void Close() override;
-    void SetFixedZoom(bool,int);
-    void Configure(const AppSettings&);
+    OperationResult SetFixedZoom(bool,int);
+    OperationResult Configure(const AppSettings&);
     void SetBounds(RECT);
     void NotifyParentMoved();
     void SetPageSignalHandler(std::function<void(PageSignal)>);
@@ -26,7 +26,8 @@ public:
     void GoBack();
     bool CanGoBack() const;
     void RefreshOrStop();
-    void RequestDiagnostics(std::function<void(std::wstring)>);
+    void RequestDiagnostics(std::function<void(std::wstring)>) override;
+    std::wstring RuntimeVersion()const override;
 private:
     struct State;
     static void ConfigureEvents(const std::shared_ptr<State>&,uint64_t);

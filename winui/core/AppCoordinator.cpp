@@ -1,13 +1,15 @@
 #include "AppCoordinator.h"
 #include "../../src/ConfigStore.h"
 #include "../../src/CoreLogic.h"
+#include "../../src/Diagnostics.h"
+#include "../settings/SettingsPolicy.h"
 namespace miniwindow {
 AppCoordinator::AppCoordinator(IBrowserPort& browser,IWindowPort& window,ISettingsPort& settings)
     :browser_(browser),window_(window),settings_(settings),state_(snapshot_.state) {
-    SessionController(state_).CloseAll();
+    runningRender_=state_.settings.renderMode;SessionController(state_).CloseAll();
 }
 AppCoordinator::AppCoordinator(IBrowserPort& browser,IWindowPort& window,ISettingsPort& settings,AppState& sharedState)
-    :browser_(browser),window_(window),settings_(settings),state_(sharedState){if(state_.tabs.empty())SessionController(state_).CloseAll();snapshot_.state=state_;}
+    :browser_(browser),window_(window),settings_(settings),state_(sharedState){runningRender_=state_.settings.renderMode;if(state_.tabs.empty())SessionController(state_).CloseAll();snapshot_.state=state_;}
 AppCoordinator::~AppCoordinator() {subscriber_={};}
 void AppCoordinator::Subscribe(std::function<void(const AppSnapshot&)> subscriber) {
     subscriber_=std::move(subscriber);
@@ -15,7 +17,7 @@ void AppCoordinator::Subscribe(std::function<void(const AppSnapshot&)> subscribe
 }
 void AppCoordinator::Publish(OperationResult result) {
     snapshot_.error=result.ok?L"":std::move(result.message);
-    snapshot_.state=state_;
+    snapshot_.state=state_;snapshot_.pendingRestart=state_.settings.renderMode!=runningRender_;
     ++snapshot_.revision;
     auto subscriber=subscriber_;
     if(subscriber) subscriber(snapshot_);
@@ -130,5 +132,32 @@ OperationResult AppCoordinator::ApplyPreset(size_t index){
     if(result.ok){state_.windowMode=preset.maximized?WindowMode::Maximized:WindowMode::Normal;state_.immersionActive=false;state_.windowHidden=false;state_.session.normalRect=preset.normalRect;state_.session.maximized=preset.maximized;browser_.SetVisible(true);result=settings_.Save(state_);}
     if(!result.ok){state_=previous;auto restore=window_.ApplyGeometry(previous.session.normalRect,previous.session.maximized);if(restore.ok&&previous.immersionActive)restore=window_.SetMode(previous.windowMode);if(restore.ok&&previous.windowHidden)restore=window_.SetHidden(true);if(runtime_)runtime_();browser_.Navigate(state_.tabs[static_cast<size_t>(state_.currentTabIndex)].url);browser_.SetVisible(!state_.windowHidden);if(!restore.ok)result.message+=L" 窗口恢复失败："+restore.message;}
     return Finish(result);
+}
+OperationResult AppCoordinator::CommitRuntime(AppState next){
+ const auto previous=state_;next.session.normalRect=window_.NormalRect();next.session.maximized=state_.windowMode==WindowMode::Maximized;state_=std::move(next);
+ auto result=runtime_?runtime_():OperationResult{};
+ if(result.ok)result=settings_.Save(state_);
+ if(!result.ok){state_=previous;if(runtime_){auto rollback=runtime_();if(!rollback.ok)result.message+=L" 恢复失败："+rollback.message;}}
+ return Finish(result);
+}
+OperationResult AppCoordinator::UpdateSettings(const AppSettings& draft){
+ auto result=ValidateSettings(draft);if(!result.ok)return Finish(result);
+ auto next=state_;next.settings=draft;next.settings.homeUrl=xiaochuang::NormalizeInputUrl(xiaochuang::TrimWhitespace(draft.homeUrl));return CommitRuntime(std::move(next));
+}
+OperationResult AppCoordinator::UpdateHotkey(HotkeyAction action,const HotkeyBinding& draft){
+ const auto index=xiaochuang::HotkeyIndex(action);if(index>=state_.hotkeys.size())return Finish({false,L"无效的快捷键动作。"});
+ constexpr UINT allowed=MOD_CONTROL|MOD_ALT|MOD_SHIFT|MOD_WIN;
+ if(draft.virtualKey==0||draft.virtualKey>255||(draft.modifiers&~allowed))return Finish({false,L"无效的快捷键。"});
+ for(size_t i=0;i<state_.hotkeys.size();++i)if(i!=index&&draft.enabled&&state_.hotkeys[i].enabled&&draft.virtualKey==state_.hotkeys[i].virtualKey&&draft.modifiers==state_.hotkeys[i].modifiers)return Finish({false,L"此组合已分配给其他动作。"});
+ if(hotkeyValidator_){auto valid=hotkeyValidator_(action,draft);if(!valid.ok)return Finish(valid);}
+ auto next=state_;next.hotkeys[index]=draft;next.hotkeys[index].id=state_.hotkeys[index].id;next.hotkeys[index].displayName=state_.hotkeys[index].displayName;return CommitRuntime(std::move(next));
+}
+OperationResult AppCoordinator::ResetDefaults(){
+ auto next=state_;next.settings=AppSettings{};next.settings.themeMode=state_.settings.themeMode;next.settings.renderMode=state_.settings.renderMode;next.hotkeys=xiaochuang::DefaultHotkeys();return CommitRuntime(std::move(next));
+}
+void AppCoordinator::RequestDiagnostics(std::function<void(std::wstring)> done){
+ auto text=xiaochuang::BuildSystemDiagnostics(state_,browser_.RuntimeVersion(),state_.windowMode);
+ text+=L"WinUI 3 native interface\r\nHole basis: "+std::to_wstring(state_.settings.holeOpacityPercent)+L"%\r\nHover reduction: "+std::to_wstring(state_.settings.hoverReductionPercent)+L"%\r\nRunning render: "+(runningRender_==xiaochuang::RenderMode::AutomaticGpu?std::wstring(L"Automatic GPU"):std::wstring(L"Software compatibility"))+L"\r\nPending restart: "+(snapshot_.pendingRestart?std::wstring(L"yes"):std::wstring(L"no"))+L"\r\n";
+ browser_.RequestDiagnostics([done=std::move(done),text=std::move(text)](std::wstring media){done(text+L"Media: "+xiaochuang::DecodeExecuteScriptString(media));});
 }
 }

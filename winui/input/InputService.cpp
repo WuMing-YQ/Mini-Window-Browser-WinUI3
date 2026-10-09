@@ -4,6 +4,7 @@ InputService::InputService(HWND hwnd,AppState& state,std::function<void(HotkeyAc
 InputService::~InputService(){Stop();}
 void InputService::Start() {
     if(running_)return;running_=true;
+    registered_=state_.hotkeys;
     hooksReady_=hotkeys_.Start(hwnd_,&state_.hotkeys,[this](auto action,auto gesture){Dispatch(action,gesture);});
     guardReady_=guard_.Start(hwnd_,[this](bool){if(running_)RefreshRuntime();});
     SetTimer(hwnd_,kInputTimer,100,nullptr);runtimeKnown_=false;RefreshRuntime();PublishErrors();
@@ -21,7 +22,7 @@ void InputService::RefreshRuntime() {
     if(state_.windowHidden)CancelGesture();
     if(!running_||refreshing_)return;refreshing_=true;
     guard_.SetEnabled(state_.settings.disableHotkeysOnTyping);guard_.Refresh();
-    const bool suppressed=guard_.IsTyping();
+    const bool suppressed=Suppressed();
     if(!runtimeKnown_||lastHidden_!=state_.windowHidden||lastBackground_!=state_.settings.backgroundMediaHotkeys||lastSuppressed_!=suppressed) {
         runtimeKnown_=true;lastHidden_=state_.windowHidden;lastBackground_=state_.settings.backgroundMediaHotkeys;lastSuppressed_=suppressed;
         if(suppressed)CancelGesture();
@@ -44,11 +45,11 @@ void InputService::Dispatch(HotkeyAction action,HotkeyGesture gesture) {
 }
 void InputService::CancelGesture(){hotkeys_.CancelActiveGesture();if(hold_){auto action=*hold_;hold_.reset();if(action_)action_(action,HotkeyGesture::HoldStop);}}
 void InputService::BeginCapture(HotkeyAction action) {
-    CancelGesture();capture_=action;
+    CancelGesture();capture_=action;RefreshRuntime();
     hotkeys_.BeginMouseCapture([this](UINT key,UINT modifiers){CaptureKey(key,modifiers);});
     if(status_)status_();
 }
-void InputService::CancelCapture(){CancelGesture();capture_.reset();hotkeys_.CancelMouseCapture();if(status_)status_();}
+void InputService::CancelCapture(){CancelGesture();capture_.reset();hotkeys_.CancelMouseCapture();RefreshRuntime();if(status_)status_();}
 bool InputService::CaptureKey(UINT key,UINT modifiers) {
     if(!capture_)return false;
     if(key==VK_ESCAPE){CancelCapture();return true;}
@@ -65,5 +66,18 @@ void InputService::OnMessage(UINT message,WPARAM parameter,LPARAM data) {
     if(message==WM_HOTKEY){RefreshRuntime();hotkeys_.HandleHotkeyMessage(static_cast<int>(parameter));}
     else if(message==xiaochuang::kMessageMouseHotkey){RefreshRuntime();hotkeys_.HandleMouseMessage(parameter,data);}
     else if(message==xiaochuang::kMessageKeyboardHotkey){RefreshRuntime();hotkeys_.HandleKeyboardMessage(parameter,data);}
+}
+OperationResult InputService::ValidateBinding(HotkeyAction action,const HotkeyBinding& value)const{
+ const auto& old=state_.hotkeys[xiaochuang::HotkeyIndex(action)];
+ if(!value.enabled||(old.enabled&&old.virtualKey==value.virtualKey&&old.modifiers==value.modifiers)||value.virtualKey==VK_LBUTTON||value.virtualKey==VK_RBUTTON||value.virtualKey==VK_MBUTTON||value.virtualKey==VK_XBUTTON1||value.virtualKey==VK_XBUTTON2)return {};
+ constexpr int probe=0x5A10;
+ if(!RegisterHotKey(hwnd_,probe,value.modifiers|MOD_NOREPEAT,value.virtualKey))return {false,L"此快捷键被系统或其他程序占用，保留原绑定。"};
+ UnregisterHotKey(hwnd_,probe);return {};
+}
+OperationResult InputService::ReloadBindings(){
+ bool changed=false;for(size_t i=0;i<registered_.size();++i){const auto& a=registered_[i];const auto& b=state_.hotkeys[i];if(a.enabled!=b.enabled||a.virtualKey!=b.virtualKey||a.modifiers!=b.modifiers)changed=true;}
+ const auto previousErrors=errors_;if(changed){CancelGesture();registered_=state_.hotkeys;runtimeKnown_=false;}RefreshRuntime();
+ if(changed)for(const auto& error:errors_)if(std::find(previousErrors.begin(),previousErrors.end(),error)==previousErrors.end())return {false,L"快捷键注册失败："+error};
+ return {};
 }
 }

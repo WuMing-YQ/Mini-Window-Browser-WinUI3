@@ -16,8 +16,10 @@ public:
     void SetStatusHandler(std::function<void()> handler){status_=std::move(handler);}
     void Dispatch(HotkeyAction,HotkeyGesture);
     void RefreshRuntime();
-    void ReloadBindings(){runtimeKnown_=false;RefreshRuntime();}
-    bool Suppressed() const {return guard_.IsTyping();}
+    OperationResult ReloadBindings();
+    OperationResult ValidateBinding(HotkeyAction,const HotkeyBinding&)const;
+    std::wstring CaptureStatus()const{return capture_?L"请按新组合键（支持鼠标侧键），Esc 取消。":L"";}
+    bool Suppressed() const {return guard_.IsTyping()||Capturing();}
     bool Capturing() const {return capture_.has_value();}
     const std::vector<std::wstring>& Errors() const {return errors_;}
     const std::wstring& GuardStatus() const {return guard_.StatusText();}
@@ -32,5 +34,6 @@ private:
     bool running_=false,refreshing_=false;
     bool runtimeKnown_=false,lastHidden_=false,lastBackground_=false,lastSuppressed_=false;
     bool hooksReady_=true,guardReady_=true;
+    std::array<HotkeyBinding,xiaochuang::kHotkeyCount> registered_{};
 };
 }

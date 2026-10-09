@@ -131,6 +131,8 @@ try {
  if(Test-Path $probe){& $probe -Window $window -OutputDirectory $directory -Evaluate {param($expression) Evaluate $expression}}
  $chrome=Join-Path (Split-Path $Fixture) 'ChromeSmoke.ps1'
  if(Test-Path $chrome){& $chrome -Window $window -ApplicationPid $process.Id -FixtureUrl $fixtureUrl -CheckProtected {-not(Evaluate 'document.querySelector("video").paused')};$result.chrome=$true}
+ $settingsSmoke=Join-Path (Split-Path $Fixture) 'SettingsSmoke.ps1'
+ if(Test-Path $settingsSmoke){& $settingsSmoke -Window $window -ApplicationPid $process.Id -Evaluate {param($expression) Evaluate $expression};$result.settings=$true}
  $socket.Dispose();$socket=$null
  $process.Refresh()
  if($process.MainWindowHandle -eq 0){throw 'Test application has no HWND.'}

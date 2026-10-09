@@ -50,6 +50,7 @@ try {
  $item=ChromeFind '管理书签…'
  $result.bookmarkFlyout=$item.Current.ControlType -eq [Windows.Automation.ControlType]::MenuItem
  if(-not $result.bookmarkFlyout){throw 'Bookmarks did not open a native list.'}
+ ChromeCapture $Window ('bookmarks-flyout-dpi'+$result.dpi+'.png')
  ChromeInvoke '管理书签…'
  $management=ChromeFind '小窗浏览器 · 管理'
  $managementWindow=[IntPtr]$management.Current.NativeWindowHandle
