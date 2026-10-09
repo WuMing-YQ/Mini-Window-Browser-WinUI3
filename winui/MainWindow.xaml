@@ -1,7 +1,7 @@
 <Window x:Class="MiniWindow.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="小窗浏览器">
 <Grid x:Name="Root" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-<Grid Padding="8" ColumnSpacing="6"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="Address" AutomationProperties.Name="网址或搜索" KeyDown="AddressKeyDown"/><Button Grid.Column="1" Content="前往" Click="NavigateClick"/></Grid>
+<StackPanel x:Name="Chrome" Spacing="4"><StackPanel Orientation="Horizontal" Spacing="4" Padding="8,4"><Button Content="最大化" AutomationProperties.Name="最大化或还原" Click="MaximizeClick"/><Button Content="沉浸" AutomationProperties.Name="切换沉浸模式" Click="ImmersionClick"/><Button Content="隐藏" AutomationProperties.Name="隐藏窗口" Click="HideClick"/></StackPanel><Grid Padding="8" ColumnSpacing="6"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="Address" AutomationProperties.Name="网址或搜索" KeyDown="AddressKeyDown"/><Button Grid.Column="1" Content="前往" Click="NavigateClick"/></Grid></StackPanel>
 <StackPanel Grid.Row="1" x:Name="ErrorPanel" Visibility="Collapsed" Orientation="Horizontal" Spacing="8" Padding="8"><TextBlock x:Name="ErrorText" TextWrapping="Wrap" MaxWidth="650"/><Button Content="重试" Click="RetryClick"/></StackPanel>
 <Grid Grid.Row="2" x:Name="WebSlot" Background="White" SizeChanged="WebSlotSizeChanged"/>
 </Grid>

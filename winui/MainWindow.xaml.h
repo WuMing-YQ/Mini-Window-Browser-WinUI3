@@ -1,7 +1,10 @@
 #pragma once
 #include "MainWindow.g.h"
+#include <winrt/Windows.UI.ViewManagement.h>
 #include "browser/BrowserHost.h"
 #include "settings/VersionedConfigStore.h"
+#include "window/WindowService.h"
+#include "window/TrayController.h"
 namespace winrt::MiniWindow::implementation {
 struct MainWindow : MainWindowT<MainWindow> {
     MainWindow();
@@ -9,7 +12,13 @@ struct MainWindow : MainWindowT<MainWindow> {
     void NavigateClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&);
     void RetryClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&);
     void WebSlotSizeChanged(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::SizeChangedEventArgs const&);
+    void MaximizeClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&);
+    void ImmersionClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&);
+    void HideClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&);
 private:
+    static LRESULT CALLBACK WindowProcedure(HWND,UINT,WPARAM,LPARAM,UINT_PTR,DWORD_PTR);
+    void ApplyFrame(miniwindow::WindowMode);
+    void SyncWindowState();
     void StartBrowser();
     void LayoutBrowser();
     Windows::Foundation::IAsyncAction InitializeBrowserAsync();
@@ -21,6 +30,10 @@ private:
     std::unique_ptr<miniwindow::BrowserHost> browser_;
     Windows::Foundation::IAsyncAction initialization_{nullptr};
     std::unique_ptr<miniwindow::VersionedConfigStore> settings_;
+    std::unique_ptr<miniwindow::WindowService> windowService_;
+    std::unique_ptr<miniwindow::TrayController> tray_;
+    winrt::Windows::UI::ViewManagement::UISettings systemTheme_;
+    winrt::event_token themeToken_{};
     std::filesystem::path directory_,profile_;
     std::wstring configError_;
     HANDLE profileLock_=nullptr;

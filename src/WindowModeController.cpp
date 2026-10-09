@@ -9,6 +9,7 @@
 #include <cmath>
 
 #pragma comment(lib, "dwmapi.lib")
+#pragma comment(lib, "gdi32.lib")
 
 namespace xiaochuang {
 
@@ -105,7 +106,7 @@ void WindowModeController::SetHidden(bool hidden) {
 
 void WindowModeController::SetSystemTray(bool enabled) {
     systemTray_ = enabled;
-    if (!window_ || IsImmersive()) return;
+    if (!window_ || IsImmersive() || hidden_) return;
     ApplyVisibleMode(visibleMode_, false);
 }
 
@@ -149,7 +150,7 @@ void WindowModeController::FitWebFullscreenAspect(double aspectRatio) {
         monitor.right - monitor.left, monitor.bottom - monitor.top);
     const RECT desired = PositionAspectFitRect(
         current, target, monitor, work, settings_ ? settings_->snapThreshold : 0);
-    SetWindowPos(window_, HWND_TOPMOST, desired.left, desired.top,
+    Position(window_, HWND_TOPMOST, desired.left, desired.top,
                  desired.right - desired.left, desired.bottom - desired.top,
                  SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
     if (layoutCallback_) layoutCallback_();
@@ -227,7 +228,7 @@ void WindowModeController::OnImmersionTimer() {
         if (outside) {
             if (holeOutsideWindow_) return;
             holeOutsideWindow_ = true;
-            SetWindowRgn(window_, nullptr, FALSE);
+            Region(window_, nullptr, FALSE);
             RedrawWindow(window_, nullptr, nullptr,
                          RDW_INVALIDATE | RDW_FRAME | RDW_ALLCHILDREN);
             return;
@@ -247,7 +248,7 @@ void WindowModeController::OnImmersionTimer() {
         if (!result) result = full;
         else if (full) DeleteObject(full);
         if (!result) return;
-        if (!SetWindowRgn(window_, result, FALSE)) {
+        if (!Region(window_, result, FALSE)) {
             DeleteObject(result);
         } else {
             RedrawWindow(window_, nullptr, nullptr,
@@ -269,7 +270,7 @@ void WindowModeController::OnImmersionTimer() {
     }
     if (hoverApplied_ != hoverCandidate_ && now - hoverCandidateSince_ >= 80) {
         hoverApplied_ = hoverCandidate_;
-        SetLayeredWindowAttributes(window_, 0, hoverApplied_ ? 0 : ConfiguredAlpha(), LWA_ALPHA);
+        Alpha(window_, 0, hoverApplied_ ? 0 : ConfiguredAlpha(), LWA_ALPHA);
     }
 }
 
@@ -280,7 +281,7 @@ void WindowModeController::ReassertTopmost() const {
     const HWND foreground = GetForegroundWindow();
     if (foreground && foreground != window_ &&
         GetAncestor(foreground, GA_ROOTOWNER) == window_) return;
-    SetWindowPos(window_, HWND_TOPMOST, 0, 0, 0, 0,
+    Position(window_, HWND_TOPMOST, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
 }
 
@@ -320,10 +321,10 @@ void WindowModeController::RefreshVisualState() {
     if (visibleMode_ == WindowMode::ImmersionHole) {
         lastCursor_ = {LONG_MIN, LONG_MIN};
         holeOutsideWindow_ = false;
-        SetLayeredWindowAttributes(window_, 0, ConfiguredAlpha(), LWA_ALPHA);
+        Alpha(window_, 0, ConfiguredAlpha(), LWA_ALPHA);
         OnImmersionTimer();
     } else {
-        SetLayeredWindowAttributes(window_, 0, hoverApplied_ ? 0 : ConfiguredAlpha(), LWA_ALPHA);
+        Alpha(window_, 0, hoverApplied_ ? 0 : ConfiguredAlpha(), LWA_ALPHA);
     }
     ReassertTopmost();
 }
@@ -351,6 +352,7 @@ void WindowModeController::ApplyVisibleMode(WindowMode mode, bool restoreGeometr
     const DWORD exStyle = immersive
         ? baseExStyle | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE
         : baseExStyle;
+    if (!immersive) ClearRegionAndOpacity();
     ApplyStyle(style, exStyle);
     RefreshFrameAppearance();
 
@@ -360,37 +362,37 @@ void WindowModeController::ApplyVisibleMode(WindowMode mode, bool restoreGeometr
             const RECT rect = CalculateImmersionRect(
                 preImmersionRect_, CurrentMonitorRect(false), chromeHeight_,
                 settings_->snapThreshold);
-            SetWindowPos(window_, HWND_TOPMOST, rect.left, rect.top,
+            Position(window_, HWND_TOPMOST, rect.left, rect.top,
                          rect.right - rect.left, rect.bottom - rect.top,
                          positionFlags);
         } else {
-            SetWindowPos(window_, HWND_TOPMOST, 0, 0, 0, 0,
+            Position(window_, HWND_TOPMOST, 0, 0, 0, 0,
                          positionFlags | SWP_NOMOVE | SWP_NOSIZE);
         }
         if (chromeVisibility_) chromeVisibility_(false);
         lastCursor_ = {LONG_MIN, LONG_MIN};
         hoverApplied_ = hoverCandidate_ = false;
         hoverCandidateSince_ = GetTickCount64();
-        SetLayeredWindowAttributes(window_, 0, ConfiguredAlpha(), LWA_ALPHA);
+        Alpha(window_, 0, ConfiguredAlpha(), LWA_ALPHA);
     } else {
         if (mode == WindowMode::Maximized) {
             if (restoreGeometry) {
                 const RECT work = CurrentMonitorRect(true);
-                SetWindowPos(window_, HWND_TOPMOST, work.left, work.top,
+                Position(window_, HWND_TOPMOST, work.left, work.top,
                              work.right - work.left, work.bottom - work.top,
                              positionFlags);
             } else {
-                SetWindowPos(window_, HWND_TOPMOST, 0, 0, 0, 0,
+                Position(window_, HWND_TOPMOST, 0, 0, 0, 0,
                              positionFlags | SWP_NOMOVE | SWP_NOSIZE);
             }
         } else {
             if (restoreGeometry) {
                 const RECT target = normalRect_;
-                SetWindowPos(window_, HWND_TOPMOST, target.left, target.top,
+                Position(window_, HWND_TOPMOST, target.left, target.top,
                              target.right - target.left, target.bottom - target.top,
                              positionFlags);
             } else {
-                SetWindowPos(window_, HWND_TOPMOST, 0, 0, 0, 0,
+                Position(window_, HWND_TOPMOST, 0, 0, 0, 0,
                              positionFlags | SWP_NOMOVE | SWP_NOSIZE);
             }
         }
@@ -411,8 +413,8 @@ void WindowModeController::ApplyStyle(DWORD style, DWORD exStyle) const {
     if ((GetWindowLongPtrW(window_, GWL_STYLE) & WS_VISIBLE) != 0) {
         style |= WS_VISIBLE;
     }
-    SetWindowLongPtrW(window_, GWL_STYLE, static_cast<LONG_PTR>(style));
-    SetWindowLongPtrW(window_, GWL_EXSTYLE, static_cast<LONG_PTR>(exStyle));
+    Check(operations_.style(window_, GWL_STYLE, static_cast<LONG_PTR>(style)),L"设置窗口样式");
+    Check(operations_.style(window_, GWL_EXSTYLE, static_cast<LONG_PTR>(exStyle)),L"设置扩展样式");
 }
 
 RECT WindowModeController::CurrentMonitorRect(bool workArea) const {
@@ -431,8 +433,8 @@ BYTE WindowModeController::ConfiguredAlpha() const {
 
 void WindowModeController::ClearRegionAndOpacity() const {
     if (!window_) return;
-    SetWindowRgn(window_, nullptr, TRUE);
-    SetLayeredWindowAttributes(window_, 0, 255, LWA_ALPHA);
+    Region(window_, nullptr, TRUE);
+    if ((GetWindowLongPtrW(window_,GWL_EXSTYLE)&WS_EX_LAYERED)!=0) Alpha(window_, 0, 255, LWA_ALPHA);
 }
 
 RECT WindowModeController::EnsureVisible(RECT rect, bool useWorkArea) const {
@@ -451,4 +453,10 @@ RECT WindowModeController::EnsureVisible(RECT rect, bool useWorkArea) const {
     return RECT{left, top, left + width, top + height};
 }
 
+bool WindowModeController::Check(bool success,const wchar_t* operation) const {
+    if(!success){if(!operationError_.empty())operationError_+=L"；";operationError_+=std::wstring(operation)+L"失败（"+std::to_wstring(GetLastError())+L"）";}return success;
+}
+bool WindowModeController::Position(HWND w,HWND after,int x,int y,int width,int height,UINT flags) const {return Check(operations_.position(w,after,x,y,width,height,flags),L"调整窗口");}
+bool WindowModeController::Region(HWND w,HRGN r,BOOL redraw) const {return Check(operations_.region(w,r,redraw),L"更新窗口区域");}
+bool WindowModeController::Alpha(HWND w,COLORREF color,BYTE value,DWORD flags) const {return Check(operations_.alpha(w,color,value,flags),L"调整不透明度");}
 } // namespace xiaochuang

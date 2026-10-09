@@ -2,6 +2,10 @@
 #include "MainWindow.xaml.h"
 #include "MainWindow.g.cpp"
 #include "core/SessionController.h"
+#include "window/ThemeSync.h"
+#include <commctrl.h>
+#include <windowsx.h>
+#pragma comment(lib,"comctl32.lib")
 #include "../src/ConfigStore.h"
 #include <microsoft.ui.xaml.window.h>
 #include <winrt/Windows.System.h>
@@ -23,12 +27,25 @@ MainWindow::MainWindow() {
     AppWindow().Closing([weak=get_weak()](auto&&,Microsoft::UI::Windowing::AppWindowClosingEventArgs const& args){
         auto self=weak.get();if(!self||self->closeApproved_)return;
         if(self->closePending_){args.Cancel(true);return;}
-        GetWindowRect(self->hwnd_,&self->state_.session.normalRect);
+        if(self->windowService_){self->state_.session.normalRect=self->windowService_->NormalRect();self->state_.session.maximized=self->windowService_->VisibleMode()==miniwindow::WindowMode::Maximized;}
         const auto result=self->settings_->Save(self->state_);
         if(!result.ok){args.Cancel(true);self->closePending_=true;self->closePrompt_=self->ConfirmCloseAsync(result.message);}
     });
+    tray_=std::make_unique<miniwindow::TrayController>(hwnd_,[weak=get_weak()](miniwindow::TrayAction action){if(auto self=weak.get();self&&!self->closed_){
+        if(action==miniwindow::TrayAction::Exit){self->Close();return;}
+        auto result=action==miniwindow::TrayAction::Show?self->windowService_->SetHidden(false):self->windowService_->RestoreNormal();
+        self->SyncWindowState();if(!result.ok)self->ShowError(result.message);
+    }});
+    windowService_=std::make_unique<miniwindow::WindowService>(hwnd_,state_.settings,[weak=get_weak()](bool visible){if(auto self=weak.get())self->Chrome().Visibility(visible?Microsoft::UI::Xaml::Visibility::Visible:Microsoft::UI::Xaml::Visibility::Collapsed);},[weak=get_weak()]{if(auto self=weak.get())self->LayoutBrowser();});
+    windowService_->SetFrameHandler([weak=get_weak()](auto mode){if(auto self=weak.get())self->ApplyFrame(mode);});
+    windowService_->SetThemeHandler([weak=get_weak()](auto mode){if(auto self=weak.get())miniwindow::ThemeSync::Apply(self->hwnd_,mode,self->Root(),self->AppWindow());});
+    windowService_->SetRecoveryHandler([weak=get_weak()](bool immersive,bool hidden,bool minimize){if(auto self=weak.get()){self->tray_->Sync(immersive,hidden,minimize);return !miniwindow::NeedsTray(immersive,hidden,minimize)||self->tray_->Available();}return false;});
+    windowService_->SetErrorHandler([weak=get_weak()](auto error){if(auto self=weak.get()){self->SyncWindowState();self->ShowError(error);}});
+    windowService_->Initialize(state_.session.normalRect,state_.session.maximized);windowService_->RefreshTheme(state_.settings.themeMode);
+    SetWindowSubclass(hwnd_,WindowProcedure,1,reinterpret_cast<DWORD_PTR>(this));
+    themeToken_=systemTheme_.ColorValuesChanged([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get())self->DispatcherQueue().TryEnqueue([weak]{if(auto window=weak.get();window&&!window->closed_)window->windowService_->RefreshTheme(window->state_.settings.themeMode);});});
     Root().Loaded([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get();self&&!self->closed_)self->StartBrowser();});
-    Closed([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get()){self->closed_=true;if(self->browser_)self->browser_->Close();if(self->initialization_)self->initialization_.Cancel();self->browser_.reset();if(self->profileLock_){CloseHandle(self->profileLock_);self->profileLock_=nullptr;}}});
+    Closed([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get()){self->closed_=true;self->systemTheme_.ColorValuesChanged(self->themeToken_);RemoveWindowSubclass(self->hwnd_,WindowProcedure,1);self->windowService_.reset();self->tray_.reset();if(self->browser_)self->browser_->Close();if(self->initialization_)self->initialization_.Cancel();self->browser_.reset();if(self->profileLock_){CloseHandle(self->profileLock_);self->profileLock_=nullptr;}}});
 }
 void MainWindow::ShowError(const std::wstring& error) {const auto message=configError_.empty()?error:configError_+(error.empty()?L"":L"\n"+error);ErrorText().Text(message);ErrorPanel().Visibility(message.empty()?Microsoft::UI::Xaml::Visibility::Collapsed:Microsoft::UI::Xaml::Visibility::Visible);}
 bool MainWindow::AcquireProfile(const std::filesystem::path& path) {
@@ -62,6 +79,7 @@ Windows::Foundation::IAsyncAction MainWindow::InitializeBrowserAsync() {
         });
         browser_->Configure(state_.settings);
         browser_->SetDocumentHandler([weak=get_weak()](std::wstring url,std::wstring title){if(auto self=weak.get();self&&!self->closed_){auto& tab=self->state_.tabs[static_cast<size_t>(self->state_.currentTabIndex)];tab.url=std::move(url);tab.title=std::move(title);self->Address().Text(tab.url);self->Title(tab.title.empty()?L"小窗浏览器":tab.title);}});
+        browser_->SetPageSignalHandler([weak=get_weak()](miniwindow::PageSignal signal){if(auto self=weak.get();self&&!self->closed_){if(signal.kind==miniwindow::PageSignal::Fullscreen)self->windowService_->OnWebFullscreen(signal.flag);else if(signal.kind==miniwindow::PageSignal::VideoAspect)self->windowService_->OnWebFullscreen(true,signal.aspect);}});
         LayoutBrowser();browser_->Navigate(state_.tabs[static_cast<size_t>(state_.currentTabIndex)].url);
         co_await browser_->InitializeAsync();
     }catch(const winrt::hresult_error& error){if(!closed_)ShowError(std::wstring(error.message()));}
@@ -83,7 +101,7 @@ void MainWindow::LayoutBrowser() {
     const auto point=WebSlot().TransformToVisual(Root()).TransformPoint({0,0});
     const double scale=GetDpiForWindow(hwnd_)/96.0;
     RECT bounds{static_cast<LONG>(std::round(point.X*scale)),static_cast<LONG>(std::round(point.Y*scale)),static_cast<LONG>(std::round((point.X+WebSlot().ActualWidth())*scale)),static_cast<LONG>(std::round((point.Y+WebSlot().ActualHeight())*scale))};
-    browser_->SetBounds(bounds);browser_->NotifyParentMoved();
+    browser_->SetBounds(bounds);browser_->NotifyParentMoved();if(windowService_&&windowService_->Mode()==miniwindow::WindowMode::Normal)windowService_->SetChromeHeight(static_cast<int>(std::round(point.Y*scale))+GetSystemMetricsForDpi(SM_CYCAPTION,GetDpiForWindow(hwnd_))+2*GetSystemMetricsForDpi(SM_CYFRAME,GetDpiForWindow(hwnd_)));
 }
 void MainWindow::AddressKeyDown(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& args) {if(args.Key()==Windows::System::VirtualKey::Enter){NavigateClick(nullptr,nullptr);args.Handled(true);}}
 void MainWindow::NavigateClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&) {
@@ -94,4 +112,31 @@ void MainWindow::NavigateClick(Windows::Foundation::IInspectable const&,Microsof
 }
 void MainWindow::RetryClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&) {StartBrowser();}
 void MainWindow::WebSlotSizeChanged(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::SizeChangedEventArgs const&) {LayoutBrowser();}
+void MainWindow::ApplyFrame(miniwindow::WindowMode mode) {
+    if(mode==miniwindow::WindowMode::Hidden)return;
+    const bool normal=mode==miniwindow::WindowMode::Normal;
+    const auto presenter=AppWindow().Presenter().as<Microsoft::UI::Windowing::OverlappedPresenter>();
+    ExtendsContentIntoTitleBar(false);SetTitleBar(nullptr);presenter.SetBorderAndTitleBar(normal,normal);
+    miniwindow::ThemeSync::Apply(hwnd_,state_.settings.themeMode,Root(),AppWindow());
+}
+void MainWindow::SyncWindowState(){if(!windowService_)return;state_.windowHidden=windowService_->Hidden();state_.immersionActive=windowService_->Immersive();state_.windowMode=windowService_->VisibleMode();if(browser_)browser_->SetVisible(!state_.windowHidden);LayoutBrowser();}
+void MainWindow::MaximizeClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&){auto result=windowService_->SetMode(windowService_->Mode()==miniwindow::WindowMode::Maximized?miniwindow::WindowMode::Normal:miniwindow::WindowMode::Maximized);SyncWindowState();if(!result.ok)ShowError(result.message);}
+void MainWindow::ImmersionClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&){auto result=windowService_->Immersive()?windowService_->RestoreNormal():windowService_->SetMode(state_.settings.immersionStyle==miniwindow::ImmersionStyle::Hole?miniwindow::WindowMode::ImmersionHole:miniwindow::WindowMode::ImmersionAutoHide);SyncWindowState();if(!result.ok)ShowError(result.message);}
+void MainWindow::HideClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&){auto result=windowService_->SetHidden(true);SyncWindowState();if(!result.ok)ShowError(result.message);}
+LRESULT CALLBACK MainWindow::WindowProcedure(HWND hwnd,UINT message,WPARAM parameter,LPARAM data,UINT_PTR,DWORD_PTR reference) {
+    auto self=reinterpret_cast<MainWindow*>(reference);if(!self||self->closed_)return DefSubclassProc(hwnd,message,parameter,data);
+    if(self->tray_)self->tray_->HandleMessage(message,parameter,data);
+    if(self->windowService_) {
+        if(message==WM_SYSCOMMAND){const auto command=parameter&0xfff0;if(command==SC_MAXIMIZE){self->MaximizeClick(nullptr,nullptr);return 0;}if(command==SC_RESTORE&&self->windowService_->Mode()==miniwindow::WindowMode::Maximized){self->MaximizeClick(nullptr,nullptr);return 0;}if(command==SC_MINIMIZE&&self->state_.settings.useSystemTray){self->HideClick(nullptr,nullptr);return 0;}}
+        if(message==WM_ACTIVATE&&LOWORD(parameter)!=WA_INACTIVE)self->windowService_->ReassertTopmost();
+        if(message==WM_NCHITTEST&&self->windowService_->Immersive())return HTTRANSPARENT;
+        if(message==WM_NCHITTEST&&self->windowService_->VisibleMode()==miniwindow::WindowMode::Maximized&&self->state_.settings.maximizedTopDragEnabled){POINT point{GET_X_LPARAM(data),GET_Y_LPARAM(data)};ScreenToClient(hwnd,&point);if(point.y>=0&&point.y<MulDiv(4,GetDpiForWindow(hwnd),96))return HTCAPTION;}
+        if(message==WM_NCLBUTTONDOWN&&parameter==HTCAPTION&&self->windowService_->VisibleMode()==miniwindow::WindowMode::Maximized){auto result=self->windowService_->RestoreForDrag({GET_X_LPARAM(data),GET_Y_LPARAM(data)});self->SyncWindowState();if(!result.ok){self->ShowError(result.message);return 0;}}
+        if(message==WM_GETMINMAXINFO){auto info=reinterpret_cast<MINMAXINFO*>(data);const bool immersive=self->windowService_->Immersive();const UINT dpi=GetDpiForWindow(hwnd);info->ptMinTrackSize={MulDiv(immersive?64:160,dpi,96),MulDiv(immersive?64:120,dpi,96)};return 0;}
+        self->windowService_->HandleMessage(message,parameter,data);
+        if(message==WM_DPICHANGED||message==WM_WINDOWPOSCHANGED)self->LayoutBrowser();
+    }
+    return DefSubclassProc(hwnd,message,parameter,data);
+}
+
 }

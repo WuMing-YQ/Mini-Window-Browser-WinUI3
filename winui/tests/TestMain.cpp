@@ -6,10 +6,12 @@ void WebLifecycleTests();
 void PageSignalsTests();
 void AtomicFileTests();
 void ConfigMigrationTests();
+void WindowAdapterTests();
+void ThemeStateTests();
 int main() {
     try {
         winrt::init_apartment();
-        SessionTests(); CoordinatorTests(); WebLifecycleTests(); PageSignalsTests(); AtomicFileTests(); ConfigMigrationTests();
+        SessionTests(); CoordinatorTests(); WebLifecycleTests(); PageSignalsTests(); AtomicFileTests(); ConfigMigrationTests(); WindowAdapterTests(); ThemeStateTests();
         std::cout << "PASS " << tests::checks << " WinUI core checks\n";
         return 0;
     } catch (const std::exception& e) {
