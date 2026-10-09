@@ -12,11 +12,10 @@ OperationResult WindowService::Change(WindowMode target,std::function<void()> op
     const bool immersive=target==WindowMode::ImmersionHole||target==WindowMode::ImmersionAutoHide;
     if((immersive||target==WindowMode::Hidden)&&!SyncRecovery(immersive,target==WindowMode::Hidden))return {false,L"托盘恢复入口不可用，未隐藏窗口。"};
     auto previous=controller_;const auto previousStyle=settings_.immersionStyle;RECT geometry{};GetWindowRect(hwnd_,&geometry);controller_.ClearOperationError();std::wstring message;
-    try {if(frame_)frame_(target);operation();message=controller_.OperationError();}catch(...){message=L"WinUI 窗口框架更新失败。";}
+    try {operation();message=controller_.OperationError();}catch(...){message=L"WinUI 窗口框架更新失败。";}
     if(!message.empty()) {
         controller_=std::move(previous);settings_.immersionStyle=previousStyle;controller_.ClearOperationError();recoveryForced_=true;
-        try {if(frame_)frame_(controller_.Mode());}catch(...){message+=L" 窗口标题栏恢复失败。";}
-        controller_.Reapply();
+        try {controller_.Reapply();}catch(...){message+=L" 窗口标题栏恢复失败。";}
         // Geometry is restored even when another recovery API reports an error.
         controller_.RestoreGeometry(geometry);
         if(!controller_.OperationError().empty())message+=L" 恢复："+controller_.OperationError();

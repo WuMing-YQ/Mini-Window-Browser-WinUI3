@@ -19,7 +19,7 @@ public:
     bool RecoveryAvailable() const {return recoveryForced_||Immersive()||Hidden()||settings_.useSystemTray;}
     void SetCursorExclusion(std::function<bool(POINT)> excluded){controller_.SetCursorExclusion(std::move(excluded));}
     void SetOperations(xiaochuang::WindowOperations operations){controller_.SetOperations(std::move(operations));}
-    void SetFrameHandler(std::function<void(WindowMode)> handler){frame_=std::move(handler);}
+    void SetFrameHandler(std::function<void(WindowMode)> handler){controller_.SetFrameHandler(std::move(handler));}
     void SetThemeHandler(std::function<void(xiaochuang::ThemeMode)> handler){themeHandler_=std::move(handler);}
     void SetRecoveryHandler(std::function<bool(bool,bool,bool)> handler){recovery_=std::move(handler);}
     void SetErrorHandler(std::function<void(std::wstring)> handler){error_=std::move(handler);}
@@ -37,7 +37,7 @@ private:
     OperationResult Change(WindowMode,std::function<void()>);
     bool SyncRecovery(bool immersion,bool hidden);
     HWND hwnd_;AppSettings& settings_;xiaochuang::WindowModeController controller_;
-    std::function<void(WindowMode)> frame_;std::function<void(xiaochuang::ThemeMode)> themeHandler_;
+    std::function<void(xiaochuang::ThemeMode)> themeHandler_;
     std::function<bool(bool,bool,bool)> recovery_;std::function<void(std::wstring)> error_;
     xiaochuang::ThemeMode theme_=xiaochuang::ThemeMode::System;
     bool recoveryForced_=false;

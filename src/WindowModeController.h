@@ -26,6 +26,7 @@ public:
     void Shutdown();
     void SetCursorExclusion(std::function<bool(POINT)> excluded){cursorExcluded_=std::move(excluded);lastCursor_={LONG_MIN,LONG_MIN};}
     void SetOperations(WindowOperations operations) {operations_=std::move(operations);}
+    void SetFrameHandler(std::function<void(WindowMode)> handler) { frameHandler_=std::move(handler); }
     void ClearOperationError() const {operationError_.clear();}
     const std::wstring& OperationError() const noexcept {return operationError_;}
     void RestoreGeometry(RECT rect) {Position(window_,HWND_TOPMOST,rect.left,rect.top,rect.right-rect.left,rect.bottom-rect.top,SWP_NOACTIVATE|SWP_FRAMECHANGED);}
@@ -79,6 +80,8 @@ private:
     AppSettings* settings_ = nullptr;
     VisibilityCallback chromeVisibility_;
     LayoutCallback layoutCallback_;
+    std::function<void(WindowMode)> frameHandler_;
+    bool applyingMode_ = false;
     RECT normalRect_{100, 100, 1100, 700};
     RECT preImmersionRect_{};
     RECT preVideoFitRect_{};

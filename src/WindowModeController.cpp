@@ -42,6 +42,7 @@ void WindowModeController::Shutdown() {
     settings_ = nullptr;
     chromeVisibility_ = {};
     layoutCallback_ = {};
+    frameHandler_ = {};
 }
 
 WindowMode WindowModeController::Mode() const noexcept {
@@ -195,7 +196,7 @@ void WindowModeController::ApplyPresetGeometry(const RECT& normalRect, bool maxi
 }
 
 void WindowModeController::UpdateNormalRectFromWindow() {
-    if (!window_ || visibleMode_ != WindowMode::Normal || hidden_ || IsIconic(window_)) return;
+    if (!window_ || applyingMode_ || visibleMode_ != WindowMode::Normal || hidden_ || IsIconic(window_)) return;
     RECT current{};
     if (GetWindowRect(window_, &current)) {
         normalRect_ = current;
@@ -346,8 +347,25 @@ void WindowModeController::RefreshFrameAppearance() const {
 
 void WindowModeController::ApplyVisibleMode(WindowMode mode, bool restoreGeometry) {
     if (!window_ || !settings_) return;
-    KillTimer(window_, kImmersionTimerId);
+    // Presenter/style changes synchronously emit WM_SIZE/WM_MOVE. Those are not
+    // user resizes and must never overwrite the saved normal-window rectangle.
+    struct ApplyingGuard {
+        bool& flag;
+        bool previous;
+        ~ApplyingGuard() { flag = previous; }
+    } guard{applyingMode_, applyingMode_};
+    applyingMode_ = true;
     const bool immersive = mode == WindowMode::ImmersionHole || mode == WindowMode::ImmersionAutoHide;
+    RECT target{};
+    if (!GetWindowRect(window_, &target)) return;
+    if (restoreGeometry) {
+        // Preserve the OUTER window bounds: removing chrome gives the webpage
+        // more room, and restoring chrome consumes that room without resizing.
+        target = immersive ? preImmersionRect_ :
+            (mode == WindowMode::Maximized ? CurrentMonitorRect(true) : normalRect_);
+    }
+    KillTimer(window_, kImmersionTimerId);
+    if (frameHandler_) frameHandler_(mode);
     const DWORD baseExStyle = WS_EX_TOPMOST | (systemTray_ ? WS_EX_TOOLWINDOW : WS_EX_APPWINDOW);
     const DWORD style = mode == WindowMode::Normal ? kNormalStyle : kPopupStyle;
     const DWORD exStyle = immersive
@@ -356,48 +374,16 @@ void WindowModeController::ApplyVisibleMode(WindowMode mode, bool restoreGeometr
     if (!immersive) ClearRegionAndOpacity();
     ApplyStyle(style, exStyle);
     RefreshFrameAppearance();
-
-    UINT positionFlags = SWP_NOACTIVATE | SWP_FRAMECHANGED | (hidden_ ? 0U : SWP_SHOWWINDOW);
+    Position(window_, HWND_TOPMOST, target.left, target.top,
+             target.right - target.left, target.bottom - target.top,
+             SWP_NOACTIVATE | SWP_FRAMECHANGED | (hidden_ ? 0U : SWP_SHOWWINDOW));
+    if (chromeVisibility_) chromeVisibility_(!immersive);
     if (immersive) {
-        if (restoreGeometry) {
-            const RECT rect = CalculateImmersionRect(
-                preImmersionRect_, CurrentMonitorRect(false), chromeHeight_,
-                settings_->snapThreshold);
-            Position(window_, HWND_TOPMOST, rect.left, rect.top,
-                         rect.right - rect.left, rect.bottom - rect.top,
-                         positionFlags);
-        } else {
-            Position(window_, HWND_TOPMOST, 0, 0, 0, 0,
-                         positionFlags | SWP_NOMOVE | SWP_NOSIZE);
-        }
-        if (chromeVisibility_) chromeVisibility_(false);
         lastCursor_ = {LONG_MIN, LONG_MIN};
         hoverApplied_ = hoverCandidate_ = false;
         hoverCandidateSince_ = GetTickCount64();
         Alpha(window_, 0, ConfiguredAlpha(), LWA_ALPHA);
     } else {
-        if (mode == WindowMode::Maximized) {
-            if (restoreGeometry) {
-                const RECT work = CurrentMonitorRect(true);
-                Position(window_, HWND_TOPMOST, work.left, work.top,
-                             work.right - work.left, work.bottom - work.top,
-                             positionFlags);
-            } else {
-                Position(window_, HWND_TOPMOST, 0, 0, 0, 0,
-                             positionFlags | SWP_NOMOVE | SWP_NOSIZE);
-            }
-        } else {
-            if (restoreGeometry) {
-                const RECT target = normalRect_;
-                Position(window_, HWND_TOPMOST, target.left, target.top,
-                             target.right - target.left, target.bottom - target.top,
-                             positionFlags);
-            } else {
-                Position(window_, HWND_TOPMOST, 0, 0, 0, 0,
-                             positionFlags | SWP_NOMOVE | SWP_NOSIZE);
-            }
-        }
-        if (chromeVisibility_) chromeVisibility_(true);
         ClearRegionAndOpacity();
     }
     if (layoutCallback_) layoutCallback_();

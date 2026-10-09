@@ -193,7 +193,7 @@ void MainWindow::InitializeChrome(){
     RefreshButton().Click([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get();self&&self->browser_)self->browser_->RefreshOrStop();});
     StarButton().Click([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get())self->ToggleBookmarkAsync();});
     BookmarksButton().Click([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get())self->ShowBookmarks(self->BookmarksButton());});
-    PresetsButton().Click([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get())self->OpenManagement(miniwindow::ManagementPage::Presets);});
+    PresetsButton().Click([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get())self->ShowPresets(self->PresetsButton());});
     auto settings=[weak=get_weak()](auto&&,auto&&){if(auto self=weak.get())self->OpenManagement(miniwindow::ManagementPage::Settings);};
     SettingsButton().Click(settings);ErrorSettingsButton().Click(settings);
     TabMenuButton().Click([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get())self->ShowTabMenu();});
@@ -227,7 +227,8 @@ void MainWindow::RenderSnapshot(const miniwindow::AppSnapshot& snapshot){
 void MainWindow::UpdateChromeLayout(){
     const auto layout=miniwindow::CalculateChromeLayout(Root().ActualWidth());using Visibility=Microsoft::UI::Xaml::Visibility;
     const bool full=layout==miniwindow::ChromeLayout::Full,wide=full||layout==miniwindow::ChromeLayout::Compact;
-    for(auto const& element:{StarButton(),BookmarksButton(),PresetsButton(),SettingsButton()})element.Visibility(full?Visibility::Visible:Visibility::Collapsed);
+    for(auto const& element:{StarButton(),BookmarksButton(),PresetsButton()})element.Visibility(full?Visibility::Visible:Visibility::Collapsed);
+    SettingsButton().Visibility(Visibility::Visible);
     BackButton().Visibility(wide?Visibility::Visible:Visibility::Collapsed);RefreshButton().Visibility(wide?Visibility::Visible:Visibility::Collapsed);
     Tabs().Visibility(wide?Visibility::Visible:Visibility::Collapsed);TabMenuButton().Visibility(wide?Visibility::Collapsed:Visibility::Visible);
     StatusText().Visibility(full&&!state_.immersionActive&&!state_.windowHidden&&Root().ActualHeight()>=240?Visibility::Visible:Visibility::Collapsed);
@@ -240,6 +241,31 @@ void MainWindow::FillBookmarkMenu(Windows::Foundation::Collections::IVector<Micr
     items.Append(Microsoft::UI::Xaml::Controls::MenuFlyoutSeparator());items.Append(MenuCommand(L"管理书签…",[weak=get_weak()]{if(auto self=weak.get())self->OpenManagement(miniwindow::ManagementPage::Bookmarks);}));
 }
 void MainWindow::ShowBookmarks(Microsoft::UI::Xaml::FrameworkElement const& anchor){Microsoft::UI::Xaml::Controls::MenuFlyout flyout;FillBookmarkMenu(flyout.Items());flyout.ShowAt(anchor);}
+void MainWindow::FillPresetMenu(Windows::Foundation::Collections::IVector<Microsoft::UI::Xaml::Controls::MenuFlyoutItemBase> const& items){
+    const auto& presets=coordinator_->Snapshot().state.presets;
+    if(presets.empty())items.Append(MenuCommand(L"暂无预设，可在管理页保存当前场景",[]{},false));
+    for(const auto& preset:presets){
+        auto item=MenuCommand(preset.name,[weak=get_weak(),name=preset.name]{if(auto self=weak.get())self->ApplyPresetAsync(name);});
+        Microsoft::UI::Xaml::Controls::ToolTipService::SetToolTip(item,box_value(std::to_wstring(preset.tabs.size())+L" 个标签 · "+std::to_wstring(preset.normalRect.right-preset.normalRect.left)+L" × "+std::to_wstring(preset.normalRect.bottom-preset.normalRect.top)));
+        items.Append(item);
+    }
+    items.Append(Microsoft::UI::Xaml::Controls::MenuFlyoutSeparator());
+    items.Append(MenuCommand(L"管理预设…",[weak=get_weak()]{if(auto self=weak.get())self->OpenManagement(miniwindow::ManagementPage::Presets);}));
+}
+void MainWindow::ShowPresets(Microsoft::UI::Xaml::FrameworkElement const& anchor){Microsoft::UI::Xaml::Controls::MenuFlyout flyout;FillPresetMenu(flyout.Items());flyout.ShowAt(anchor);}
+Windows::Foundation::IAsyncAction MainWindow::ApplyPresetAsync(std::wstring name){
+    auto lifetime=get_strong();
+    if(dialogDepth_>0)co_return;
+    try {
+        if(management_&&!co_await management_->CanLeaveAsync())co_return;
+        SetDialogActive(true);auto occlusion=wil::scope_exit([this]{SetDialogActive(false);});
+        if(!co_await miniwindow::ui::Confirm(Root().XamlRoot(),L"应用“"+name+L"”？",L"将恢复保存的标签和窗口设置，当前网页输入可能丢失。",L"应用预设"))co_return;
+        const auto& presets=coordinator_->Snapshot().state.presets;
+        auto found=std::find_if(presets.begin(),presets.end(),[&](const auto& preset){return preset.name==name;});
+        if(found==presets.end()){ShowError(L"该预设已被修改或删除，请重新打开列表。");co_return;}
+        auto result=coordinator_->ApplyPreset(static_cast<size_t>(found-presets.begin()));SyncWindowState();if(!result.ok)ShowError(result.message);
+    }catch(const hresult_error& error){ShowError(std::wstring(error.message()));}
+}
 void MainWindow::ShowTabMenu(){Microsoft::UI::Xaml::Controls::MenuFlyout flyout;for(size_t i=0;i<state_.tabs.size();++i)flyout.Items().Append(MenuCommand((static_cast<int>(i)==state_.currentTabIndex?L"● ":L"")+state_.tabs[i].title,[weak=get_weak(),i]{if(auto self=weak.get())self->coordinator_->SelectTab(i);}));flyout.Items().Append(Microsoft::UI::Xaml::Controls::MenuFlyoutSeparator());flyout.Items().Append(MenuCommand(L"新建标签",[weak=get_weak()]{if(auto self=weak.get())self->coordinator_->AddTab(self->state_.settings.homeUrl);}));flyout.Items().Append(MenuCommand(L"关闭当前标签",[weak=get_weak()]{if(auto self=weak.get())self->coordinator_->CloseTab(static_cast<size_t>(self->state_.currentTabIndex));}));flyout.Items().Append(MenuCommand(L"关闭其他标签",[weak=get_weak()]{if(auto self=weak.get())self->coordinator_->CloseOtherTabs(static_cast<size_t>(self->state_.currentTabIndex));}));flyout.Items().Append(MenuCommand(L"关闭全部标签",[weak=get_weak()]{if(auto self=weak.get())self->coordinator_->CloseAllTabs();}));flyout.ShowAt(TabMenuButton());}
 void MainWindow::ShowMoreMenu(){
     Microsoft::UI::Xaml::Controls::MenuFlyout flyout;auto items=flyout.Items();
@@ -247,9 +273,7 @@ void MainWindow::ShowMoreMenu(){
     items.Append(MenuCommand(L"刷新 / 停止",[weak=get_weak()]{if(auto self=weak.get();self&&self->browser_)self->browser_->RefreshOrStop();}));
     items.Append(MenuCommand(L"收藏当前网页",[weak=get_weak()]{if(auto self=weak.get())self->ToggleBookmarkAsync();}));
     Microsoft::UI::Xaml::Controls::MenuFlyoutSubItem bookmarks;bookmarks.Text(L"书签");FillBookmarkMenu(bookmarks.Items());items.Append(bookmarks);
-    items.Append(MenuCommand(L"场景预设",[weak=get_weak()]{if(auto self=weak.get())self->OpenManagement(miniwindow::ManagementPage::Presets);}));
-    items.Append(MenuCommand(L"沉浸控制…",[weak=get_weak()]{if(auto self=weak.get())self->OpenImmersionPanel();}));
-    items.Append(MenuCommand(L"设置",[weak=get_weak()]{if(auto self=weak.get())self->OpenManagement(miniwindow::ManagementPage::Settings);}));
+    Microsoft::UI::Xaml::Controls::MenuFlyoutSubItem presets;presets.Text(L"场景预设");FillPresetMenu(presets.Items());items.Append(presets);
     items.Append(MenuCommand(L"恢复普通模式",[weak=get_weak()]{if(auto self=weak.get()){self->coordinator_->RestoreNormal();self->SyncWindowState();}}));
     items.Append(MenuCommand(L"隐藏窗口",[weak=get_weak()]{if(auto self=weak.get())self->HideClick(nullptr,nullptr);}));
     items.Append(MenuCommand(L"最小化",[weak=get_weak()]{if(auto self=weak.get())ShowWindow(self->hwnd_,SW_MINIMIZE);}));

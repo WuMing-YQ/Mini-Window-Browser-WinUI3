@@ -26,6 +26,9 @@ private:
     void OpenManagement(miniwindow::ManagementPage);void OpenImmersionPanel();
     void ShowBookmarks(Microsoft::UI::Xaml::FrameworkElement const&);
     void FillBookmarkMenu(Windows::Foundation::Collections::IVector<Microsoft::UI::Xaml::Controls::MenuFlyoutItemBase> const&);
+    void ShowPresets(Microsoft::UI::Xaml::FrameworkElement const&);
+    void FillPresetMenu(Windows::Foundation::Collections::IVector<Microsoft::UI::Xaml::Controls::MenuFlyoutItemBase> const&);
+    Windows::Foundation::IAsyncAction ApplyPresetAsync(std::wstring name);
     void ShowTabMenu();void ShowMoreMenu();
     Windows::Foundation::IAsyncAction ToggleBookmarkAsync();
     Windows::Foundation::IAsyncAction RequestCloseAsync();

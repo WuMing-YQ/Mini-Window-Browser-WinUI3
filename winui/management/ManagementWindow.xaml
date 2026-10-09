@@ -1,2 +1,15 @@
-<Window x:Class="MiniWindow.ManagementWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="小窗浏览器 · 管理">
-<Grid x:Name="Root" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"><NavigationView x:Name="Navigation" IsSettingsVisible="False" PaneDisplayMode="Left" IsBackButtonVisible="Collapsed" OpenPaneLength="160" IsPaneToggleButtonVisible="False" AlwaysShowHeader="False"><NavigationView.MenuItems><NavigationViewItem Content="书签" Tag="0" Icon="Favorite"/><NavigationViewItem Content="场景预设" Tag="1" Icon="Save"/><NavigationViewItem Content="设置" Tag="2" Icon="Setting"/></NavigationView.MenuItems><ContentControl x:Name="PageHost"/></NavigationView></Grid></Window>
+<Window x:Class="MiniWindow.ManagementWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="小窗浏览器 · 设置与管理">
+<Grid x:Name="Root" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+<NavigationView x:Name="Navigation" IsSettingsVisible="False" PaneDisplayMode="Left" IsBackButtonVisible="Collapsed" OpenPaneLength="190" IsPaneToggleButtonVisible="False" AlwaysShowHeader="False">
+<NavigationView.PaneHeader><StackPanel Margin="16,20,12,20" Spacing="4"><TextBlock Text="小窗浏览器" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="设置与管理" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12"/></StackPanel></NavigationView.PaneHeader>
+<NavigationView.MenuItems>
+<NavigationViewItem Content="窗口与行为" Tag="2" Icon="ViewAll"/>
+<NavigationViewItem Content="沉浸" Tag="3" Icon="FullScreen"/>
+<NavigationViewItem Content="网页与媒体" Tag="4" Icon="Globe"/>
+<NavigationViewItem Content="快捷键" Tag="5" Icon="Keyboard"/>
+<NavigationViewItem Content="外观" Tag="6" Icon="Personalize"/>
+<NavigationViewItem Content="诊断与关于" Tag="7" Icon="Help"/>
+</NavigationView.MenuItems>
+<NavigationView.FooterMenuItems><NavigationViewItem Content="管理书签" Tag="0" Icon="Favorite"/><NavigationViewItem Content="管理预设" Tag="1" Icon="Save"/></NavigationView.FooterMenuItems>
+<Border Margin="0,8,8,8" CornerRadius="12" Background="{ThemeResource LayerFillColorDefaultBrush}"><ContentControl x:Name="PageHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/></Border>
+</NavigationView></Grid></Window>

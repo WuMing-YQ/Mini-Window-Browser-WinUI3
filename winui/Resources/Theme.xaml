@@ -2,4 +2,8 @@
 <x:Double x:Key="CompactControlHeight">30</x:Double>
 <CornerRadius x:Key="ControlCornerRadius">6</CornerRadius>
 <Style x:Key="ChromeButtonStyle" TargetType="Button"><Setter Property="FontFamily" Value="Segoe Fluent Icons"/><Setter Property="FontSize" Value="14"/><Setter Property="MinWidth" Value="28"/><Setter Property="MinHeight" Value="28"/><Setter Property="Padding" Value="4"/><Setter Property="Height" Value="28"/><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/></Style>
+<Style x:Key="SettingsCardStyle" TargetType="Border"><Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}"/><Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="8"/><Setter Property="Padding" Value="16,14"/></Style>
+<Style x:Key="SettingsLabelStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="14"/><Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
+<Style x:Key="SettingsDescriptionStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="12"/><Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
+<Style x:Key="SettingsGroupStyle" TargetType="TextBlock"><Setter Property="FontSize" Value="14"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Margin" Value="0,12,0,4"/></Style>
 </ResourceDictionary>
