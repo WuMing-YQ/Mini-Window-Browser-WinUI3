@@ -12,7 +12,31 @@ $report=Join-Path $directory 'browser-smoke.json'
 $previousArguments=$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
 $socket=$null
 $process=$null
-$result=[ordered]@{initialization=$false;navigation=$false;media=$false;typingSignal=$false;close=$false;fixedZoom='Deferred until settings UI is connected';games='Not run'}
+$keyHeld=$false
+$result=[ordered]@{initialization=$false;navigation=$false;media=$false;typingSignal=$false;typingGuard=$false;ownedTypingGuard=$false;holdCancel=$false;close=$false;fixedZoom='Deferred until settings UI is connected';games='Not run'}
+Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
+Add-Type @'
+using System;using System.Runtime.InteropServices;
+namespace MiniWindowInputSmoke {
+ public static class Native {
+  [StructLayout(LayoutKind.Sequential)]public struct INPUT {public uint type;public UNION data;}
+  [StructLayout(LayoutKind.Explicit)]public struct UNION {[FieldOffset(0)]public KEY key;[FieldOffset(0)]public MOUSE mouse;}
+  [StructLayout(LayoutKind.Sequential)]public struct KEY {public ushort vk,scan;public uint flags,time;public UIntPtr extra;}
+  [StructLayout(LayoutKind.Sequential)]public struct MOUSE {public int x,y;public uint data,flags,time;public UIntPtr extra;}
+  [DllImport("user32.dll")]public static extern uint SendInput(uint count,INPUT[] input,int size);
+  [DllImport("user32.dll")]public static extern bool PostMessage(IntPtr window,uint message,IntPtr w,IntPtr l);
+  [DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr window);
+  [DllImport("user32.dll")]public static extern IntPtr GetForegroundWindow();
+  public static bool Key(bool up){var input=new INPUT();input.type=1;input.data.key.vk=0x36;input.data.key.flags=up?2u:0u;return SendInput(1,new[]{input},Marshal.SizeOf(typeof(INPUT)))==1;}
+ }
+}
+'@
+function Element([IntPtr]$window,[string]$name){
+ $root=[Windows.Automation.AutomationElement]::FromHandle($window)
+ $found=$root.FindFirst([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty,$name))
+ if(-not $found){throw ('Missing UI: '+$name)};return $found
+}
+function PlayHotkey { [void][MiniWindowInputSmoke.Native]::PostMessage($window,0x312,[IntPtr]102,[IntPtr]::Zero);Start-Sleep -Milliseconds 300 }
 try {
  # Run this script in the signed-in desktop session; an SSH service cannot enumerate its HWNDs.
  Get-Process | Where-Object {try {$_.Path -eq $Executable}catch{$false}} | ForEach-Object {[void]$_.CloseMainWindow();[void]$_.WaitForExit(3000)}
@@ -61,14 +85,48 @@ try {
  $result.requestedUrl=$fixtureUrl
  $result.navigationResponse=$navigation
  if($navigation.errorText){throw $navigation.errorText}
- for($i=0;$i -lt 20;$i++){Start-Sleep -Milliseconds 250;if((Evaluate 'document.readyState==="complete" && location.href.includes("browser-fixture.html") && typeof frames==="number"')){break}}
+ for($i=0;$i -lt 20;$i++){Start-Sleep -Milliseconds 250;if((Evaluate 'document.readyState==="complete" && location.href.includes("browser-fixture.html") && typeof frames==="number" && fixtureReady')){break}}
  $result.navigation=(Evaluate 'document.title') -eq '小窗浏览器桌面测试'
  if(-not $result.navigation){throw ('Wrong document: '+(Evaluate 'location.href+" | "+document.title'))}
  $first=Evaluate 'frames'
  Start-Sleep -Seconds 1
  $result.media=((Evaluate 'frames') -gt $first) -and (Evaluate 'document.querySelector("video").paused===false')
- [void](Evaluate 'window.chrome.webview.postMessage("MWB_TYPING:1");true')
- $result.typingSignal=$true # Delivered; effective input suppression is checked after Task 6.
+ $process.Refresh();$window=$process.MainWindowHandle
+ if($window -eq [IntPtr]::Zero){throw 'Main HWND missing.'}
+ [void][MiniWindowInputSmoke.Native]::SetForegroundWindow($window)
+ $address=Element $window '网址或搜索'
+ $address.GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).SetValue($fixtureUrl)
+ (Element $window '前往').GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
+ Start-Sleep -Milliseconds 2200
+ if(-not(Evaluate 'document.hasFocus()')){throw 'Browser did not receive real focus.'}
+ PlayHotkey
+ if(-not(Evaluate 'document.querySelector("video").paused')){throw 'Unprotected media action did not fire.'}
+ PlayHotkey
+ if(Evaluate 'document.querySelector("video").paused'){throw 'Media action did not resume.'}
+ [void](Evaluate 'document.querySelector("input").focus();true');Start-Sleep -Milliseconds 400
+ $result.typingSignal=Evaluate 'document.activeElement.tagName==="INPUT" && document.hasFocus()'
+ PlayHotkey
+ $result.typingGuard=-not(Evaluate 'document.querySelector("video").paused')
+ if(-not $result.typingGuard){throw 'Web text focus did not protect media hotkeys.'}
+ [void](Evaluate 'document.activeElement.blur();window.chrome.webview.postMessage("MWB_TYPING:0");true')
+ $address.SetFocus();Start-Sleep -Milliseconds 400
+ PlayHotkey
+ $result.ownedTypingGuard=-not(Evaluate 'document.querySelector("video").paused')
+ if(-not $result.ownedTypingGuard){throw 'XAML address focus did not protect media hotkeys.'}
+ (Element $window '前往').GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke();Start-Sleep -Milliseconds 2200
+ if([MiniWindowInputSmoke.Native]::GetForegroundWindow() -ne $window){throw 'Test HWND lost foreground; no input sent.'}
+ PlayHotkey
+ if(-not(Evaluate 'document.querySelector("video").paused')){throw 'Guard remained active after returning to browser.'}
+ PlayHotkey
+ $keyHeld=[MiniWindowInputSmoke.Native]::Key($false)
+ if(-not $keyHeld){throw 'SendInput key down failed.'}
+ Start-Sleep -Milliseconds 650
+ $result.holdRate=Evaluate 'document.querySelector("video").playbackRate'
+ if($result.holdRate -le 1){throw 'Real 400ms media hold did not start.'}
+ $address.SetFocus();Start-Sleep -Milliseconds 400
+ $result.holdCancel=(Evaluate 'document.querySelector("video").playbackRate') -eq 1
+ [void][MiniWindowInputSmoke.Native]::Key($true);$keyHeld=$false
+ if(-not $result.holdCancel){throw 'Changing to XAML text focus left hold speed active.'}
  $socket.Dispose();$socket=$null
  $process.Refresh()
  if($process.MainWindowHandle -eq 0){throw 'Test application has no HWND.'}
@@ -85,6 +143,7 @@ try {
  $result.error=$_.Exception.Message
  throw
 }finally{
+ if($keyHeld){[void][MiniWindowInputSmoke.Native]::Key($true)}
  $result|ConvertTo-Json -Depth 5|Set-Content $report -Encoding UTF8
  if($socket){$socket.Dispose()}
  if($process -and -not $process.HasExited){[void]$process.CloseMainWindow();[void]$process.WaitForExit(3000)}

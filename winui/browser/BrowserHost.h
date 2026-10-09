@@ -21,6 +21,8 @@ public:
     void SetPageSignalHandler(std::function<void(PageSignal)>);
     void SetDocumentHandler(std::function<void(std::wstring,std::wstring)>);
     void SetNavigationHandlers(std::function<void()> cancelGesture,std::function<void(std::wstring)> newTab,std::function<void()> closeTab);
+    void SetFocusHandler(std::function<void(bool)>);
+    void Focus();
     void GoBack();
     bool CanGoBack() const;
     void RefreshOrStop();

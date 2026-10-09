@@ -3,6 +3,7 @@
 #include "MainWindow.g.cpp"
 #include "core/SessionController.h"
 #include "window/ThemeSync.h"
+#include "input/OwnedFocus.h"
 #include <commctrl.h>
 #include <windowsx.h>
 #pragma comment(lib,"comctl32.lib")
@@ -44,10 +45,16 @@ MainWindow::MainWindow() {
     windowService_->Initialize(state_.session.normalRect,state_.session.maximized);windowService_->RefreshTheme(state_.settings.themeMode);
     SetWindowSubclass(hwnd_,WindowProcedure,1,reinterpret_cast<DWORD_PTR>(this));
     themeToken_=systemTheme_.ColorValuesChanged([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get())self->DispatcherQueue().TryEnqueue([weak]{if(auto window=weak.get();window&&!window->closed_)window->windowService_->RefreshTheme(window->state_.settings.themeMode);});});
+    input_=std::make_unique<miniwindow::InputService>(hwnd_,state_,[weak=get_weak()](auto action,auto gesture){if(auto self=weak.get();self&&!self->closed_)self->HandleHotkey(action,gesture);});
+    input_->SetStatusHandler([weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_){self->inputError_.clear();for(const auto& error:self->input_->Errors())self->inputError_+=error+L"\n";self->ShowError(L"");}});
+    auto focusChanged=[weak=get_weak()](auto&&,auto&&){if(auto self=weak.get();self&&!self->closed_)self->DispatcherQueue().TryEnqueue([weak]{if(auto window=weak.get();window&&!window->closed_)window->RefreshOwnedFocus();});};
+    Root().GotFocus(focusChanged);Root().LostFocus(focusChanged);
+    Root().PreviewKeyDown([weak=get_weak()](auto&&,Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& args){if(auto self=weak.get();self&&!self->closed_&&self->input_&&self->input_->CaptureKey(static_cast<UINT>(args.Key()),miniwindow::CurrentKeyModifiers()))args.Handled(true);});
+    input_->Start();
     Root().Loaded([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get();self&&!self->closed_)self->StartBrowser();});
-    Closed([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get()){self->closed_=true;self->systemTheme_.ColorValuesChanged(self->themeToken_);RemoveWindowSubclass(self->hwnd_,WindowProcedure,1);self->windowService_.reset();self->tray_.reset();if(self->browser_)self->browser_->Close();if(self->initialization_)self->initialization_.Cancel();self->browser_.reset();if(self->profileLock_){CloseHandle(self->profileLock_);self->profileLock_=nullptr;}}});
+    Closed([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get()){self->closed_=true;if(self->input_)self->input_->Stop();self->systemTheme_.ColorValuesChanged(self->themeToken_);RemoveWindowSubclass(self->hwnd_,WindowProcedure,1);self->windowService_.reset();self->tray_.reset();if(self->browser_)self->browser_->Close();if(self->initialization_)self->initialization_.Cancel();self->browser_.reset();if(self->profileLock_){CloseHandle(self->profileLock_);self->profileLock_=nullptr;}}});
 }
-void MainWindow::ShowError(const std::wstring& error) {const auto message=configError_.empty()?error:configError_+(error.empty()?L"":L"\n"+error);ErrorText().Text(message);ErrorPanel().Visibility(message.empty()?Microsoft::UI::Xaml::Visibility::Collapsed:Microsoft::UI::Xaml::Visibility::Visible);}
+void MainWindow::ShowError(const std::wstring& error) {const auto message=configError_+(configError_.empty()?L"":L"\n")+inputError_+error;ErrorText().Text(message);ErrorPanel().Visibility(message.empty()?Microsoft::UI::Xaml::Visibility::Collapsed:Microsoft::UI::Xaml::Visibility::Visible);}
 bool MainWindow::AcquireProfile(const std::filesystem::path& path) {
     auto identity=std::filesystem::absolute(path).wstring();for(auto& c:identity)c=static_cast<wchar_t>(towlower(c));
     const auto name=L"Local\\MiniWindow.Profile."+std::to_wstring(std::hash<std::wstring>{}(identity));
@@ -59,7 +66,7 @@ void MainWindow::StartBrowser() {if(closed_||starting_)return;starting_=true;ini
 Windows::Foundation::IAsyncAction MainWindow::InitializeBrowserAsync() {
     auto lifetime=get_strong();
     try {
-        if(browser_)browser_->Close();
+        webFocused_=false;if(browser_)browser_->Close();
         if(profile_.empty()) {
             const auto legacy=directory_/L"XiaoChuang.exe.WebView2";
             auto candidate=std::filesystem::exists(legacy)?legacy:directory_/L"data"/L"webview-profile";
@@ -79,7 +86,9 @@ Windows::Foundation::IAsyncAction MainWindow::InitializeBrowserAsync() {
         });
         browser_->Configure(state_.settings);
         browser_->SetDocumentHandler([weak=get_weak()](std::wstring url,std::wstring title){if(auto self=weak.get();self&&!self->closed_){auto& tab=self->state_.tabs[static_cast<size_t>(self->state_.currentTabIndex)];tab.url=std::move(url);tab.title=std::move(title);self->Address().Text(tab.url);self->Title(tab.title.empty()?L"小窗浏览器":tab.title);}});
-        browser_->SetPageSignalHandler([weak=get_weak()](miniwindow::PageSignal signal){if(auto self=weak.get();self&&!self->closed_){if(signal.kind==miniwindow::PageSignal::Fullscreen)self->windowService_->OnWebFullscreen(signal.flag);else if(signal.kind==miniwindow::PageSignal::VideoAspect)self->windowService_->OnWebFullscreen(true,signal.aspect);}});
+        browser_->SetFocusHandler([weak=get_weak()](bool focused){if(auto self=weak.get();self&&!self->closed_){self->webFocused_=focused;self->RefreshOwnedFocus();}});
+        browser_->SetNavigationHandlers([weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_){self->input_->CancelGesture();self->input_->OnPageTyping(false);}},[weak=get_weak()](std::wstring url){if(auto self=weak.get();self&&!self->closed_){miniwindow::SessionController(self->state_).AddTab(url);self->browser_->Navigate(url);self->Address().Text(url);}},[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_){self->input_->CancelGesture();miniwindow::SessionController(self->state_).CloseTab(static_cast<size_t>(self->state_.currentTabIndex));self->browser_->Navigate(self->state_.tabs[static_cast<size_t>(self->state_.currentTabIndex)].url);}});
+        browser_->SetPageSignalHandler([weak=get_weak()](miniwindow::PageSignal signal){if(auto self=weak.get();self&&!self->closed_){if(signal.kind==miniwindow::PageSignal::Typing)self->input_->OnPageTyping(signal.flag);else if(signal.kind==miniwindow::PageSignal::Fullscreen){self->webFullscreen_=signal.flag;self->windowService_->OnWebFullscreen(signal.flag);self->input_->SetImmersiveWebFullscreen(signal.flag&&self->windowService_->Immersive());}else if(signal.kind==miniwindow::PageSignal::VideoAspect)self->windowService_->OnWebFullscreen(true,signal.aspect);}});
         LayoutBrowser();browser_->Navigate(state_.tabs[static_cast<size_t>(state_.currentTabIndex)].url);
         co_await browser_->InitializeAsync();
     }catch(const winrt::hresult_error& error){if(!closed_)ShowError(std::wstring(error.message()));}
@@ -107,7 +116,7 @@ void MainWindow::AddressKeyDown(Windows::Foundation::IInspectable const&,Microso
 void MainWindow::NavigateClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&) {
     if(!browser_)return;
     const auto url=xiaochuang::NormalizeInputUrl(std::wstring(Address().Text()));const auto result=browser_->Navigate(url);
-    if(result.ok)state_.tabs[static_cast<size_t>(state_.currentTabIndex)].url=url;
+    if(result.ok){state_.tabs[static_cast<size_t>(state_.currentTabIndex)].url=url;browser_->Focus();}
     else{ErrorText().Text(result.message);ErrorPanel().Visibility(Microsoft::UI::Xaml::Visibility::Visible);}
 }
 void MainWindow::RetryClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&) {StartBrowser();}
@@ -119,12 +128,14 @@ void MainWindow::ApplyFrame(miniwindow::WindowMode mode) {
     ExtendsContentIntoTitleBar(false);SetTitleBar(nullptr);presenter.SetBorderAndTitleBar(normal,normal);
     miniwindow::ThemeSync::Apply(hwnd_,state_.settings.themeMode,Root(),AppWindow());
 }
-void MainWindow::SyncWindowState(){if(!windowService_)return;state_.windowHidden=windowService_->Hidden();state_.immersionActive=windowService_->Immersive();state_.windowMode=windowService_->VisibleMode();if(browser_)browser_->SetVisible(!state_.windowHidden);LayoutBrowser();}
+void MainWindow::SyncWindowState(){if(!windowService_)return;if(input_)input_->CancelGesture();state_.windowHidden=windowService_->Hidden();state_.immersionActive=windowService_->Immersive();state_.windowMode=windowService_->VisibleMode();if(browser_)browser_->SetVisible(!state_.windowHidden);if(input_){input_->RefreshRuntime();input_->SetImmersiveWebFullscreen(webFullscreen_&&state_.immersionActive);}LayoutBrowser();}
 void MainWindow::MaximizeClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&){auto result=windowService_->SetMode(windowService_->Mode()==miniwindow::WindowMode::Maximized?miniwindow::WindowMode::Normal:miniwindow::WindowMode::Maximized);SyncWindowState();if(!result.ok)ShowError(result.message);}
 void MainWindow::ImmersionClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&){auto result=windowService_->Immersive()?windowService_->RestoreNormal():windowService_->SetMode(state_.settings.immersionStyle==miniwindow::ImmersionStyle::Hole?miniwindow::WindowMode::ImmersionHole:miniwindow::WindowMode::ImmersionAutoHide);SyncWindowState();if(!result.ok)ShowError(result.message);}
 void MainWindow::HideClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&){auto result=windowService_->SetHidden(true);SyncWindowState();if(!result.ok)ShowError(result.message);}
 LRESULT CALLBACK MainWindow::WindowProcedure(HWND hwnd,UINT message,WPARAM parameter,LPARAM data,UINT_PTR,DWORD_PTR reference) {
     auto self=reinterpret_cast<MainWindow*>(reference);if(!self||self->closed_)return DefSubclassProc(hwnd,message,parameter,data);
+    if(self->input_)self->input_->OnMessage(message,parameter,data);
+    if(message==WM_KILLFOCUS&&self->input_)self->input_->SetOwnedTextFocus(false);
     if(self->tray_)self->tray_->HandleMessage(message,parameter,data);
     if(self->windowService_) {
         if(message==WM_SYSCOMMAND){const auto command=parameter&0xfff0;if(command==SC_MAXIMIZE){self->MaximizeClick(nullptr,nullptr);return 0;}if(command==SC_RESTORE&&self->windowService_->Mode()==miniwindow::WindowMode::Maximized){self->MaximizeClick(nullptr,nullptr);return 0;}if(command==SC_MINIMIZE&&self->state_.settings.useSystemTray){self->HideClick(nullptr,nullptr);return 0;}}
@@ -137,6 +148,21 @@ LRESULT CALLBACK MainWindow::WindowProcedure(HWND hwnd,UINT message,WPARAM param
         if(message==WM_DPICHANGED||message==WM_WINDOWPOSCHANGED)self->LayoutBrowser();
     }
     return DefSubclassProc(hwnd,message,parameter,data);
+}
+
+void MainWindow::RefreshOwnedFocus(){if(input_&&GetAncestor(GetForegroundWindow(),GA_ROOT)==hwnd_)input_->SetOwnedTextFocus(!webFocused_&&miniwindow::HasOwnedTextFocus(Root().XamlRoot()));}
+void MainWindow::HandleHotkey(miniwindow::HotkeyAction action,miniwindow::HotkeyGesture gesture) {
+    using miniwindow::HotkeyAction;using miniwindow::HotkeyGesture;using miniwindow::MediaCommand;
+    if(action==HotkeyAction::Immersion){ImmersionClick(nullptr,nullptr);return;}
+    if(action==HotkeyAction::ToggleHidden){auto result=windowService_->SetHidden(!state_.windowHidden);SyncWindowState();if(!result.ok)ShowError(result.message);return;}
+    if(!browser_)return;
+    MediaCommand command=MediaCommand::TogglePlay;
+    if(gesture==HotkeyGesture::HoldStop)command=MediaCommand::StopHold;
+    else if(action==HotkeyAction::SeekBackward)command=gesture==HotkeyGesture::HoldStart?MediaCommand::HoldBackward:MediaCommand::SeekBackward;
+    else if(action==HotkeyAction::SeekForward)command=gesture==HotkeyGesture::HoldStart?MediaCommand::HoldForward:MediaCommand::SeekForward;
+    else if(action==HotkeyAction::Previous)command=MediaCommand::Previous;
+    else if(action==HotkeyAction::Next)command=MediaCommand::Next;
+    browser_->ExecuteMedia(command,state_.settings.holdPlaybackRate);
 }
 
 }

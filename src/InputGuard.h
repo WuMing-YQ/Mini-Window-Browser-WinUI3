@@ -14,6 +14,16 @@ namespace xiaochuang {
 constexpr UINT kMessageInputFocusChanged = WM_APP + 41;
 constexpr UINT kMessageInputGuardResult = WM_APP + 43;
 
+inline bool ShouldSuppressTyping(bool enabled,bool ownedText,bool webTyping,bool applicationForeground,bool systemTyping) {
+    return enabled&&(systemTyping||(applicationForeground&&(ownedText||webTyping)));
+}
+struct InputFocusSnapshot {ULONGLONG sequence;HWND foreground;DWORD thread;HWND focus;HWND foregroundRoot;DWORD process;};
+struct InputObservation {ULONGLONG sequence;HWND foreground;DWORD thread;HWND focus;HWND automationRoot;DWORD automationProcess;bool typing;};
+inline bool IsCurrentInputObservation(const InputObservation& observed,const InputFocusSnapshot& current) {
+    if(observed.sequence<current.sequence||observed.foreground!=current.foreground||observed.thread!=current.thread)return false;
+    if(observed.focus&&current.focus&&observed.focus!=current.focus)return false;
+    return !observed.typing||(current.foregroundRoot&&observed.automationRoot==current.foregroundRoot)||(observed.automationProcess&&observed.automationProcess==current.process);
+}
 class InputGuard {
 public:
     using StateCallback = std::function<void(bool)>;
@@ -28,6 +38,7 @@ public:
     void SetNativeEdit(HWND edit) noexcept { nativeEdit_ = edit; }
     void SetEnabled(bool enabled);
     void SetWebTyping(bool typing);
+    void SetOwnedTextFocus(bool focused);
     bool Refresh();
     void HandleAsyncResult(LPARAM resultPointer);
     bool ConsumePendingEvents();
@@ -56,6 +67,7 @@ private:
     StateCallback callback_;
     bool enabled_ = true;
     bool webTyping_ = false;
+    bool ownedTextFocus_ = false;
     bool typing_ = false;
     std::atomic_bool externalObservationArmed_{false};
     std::atomic_bool focusMessagePending_{false};

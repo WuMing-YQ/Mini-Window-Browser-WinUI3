@@ -39,10 +39,11 @@ struct BrowserHost::State {
     std::shared_ptr<Creation> creation;
     std::function<void(bool,bool,std::wstring)> status;
     std::function<void(PageSignal)> signal;
+    std::function<void(bool)> focus;
     std::function<void(std::wstring,std::wstring)> document;
     std::function<void()> cancelGesture,closeTab;
     std::function<void(std::wstring)> newTab;
-    EventRegistrationToken starting{},content{},completed{},source{},title{},message{},fullscreen{},newWindow{},closeWindow{},failed{};
+    EventRegistrationToken starting{},content{},completed{},source{},title{},message{},fullscreen{},newWindow{},closeWindow{},failed{},gotFocus{},lostFocus{};
     void Report(std::wstring error={}) {if(status) status(ready,loading,std::move(error));}
     void UpdateDocument() {
         if(waiting||!view||!document) return;
@@ -113,6 +114,8 @@ void BrowserHost::ConfigureEvents(const std::shared_ptr<State>& s,uint64_t gener
     std::weak_ptr<State> weak=s;
     auto current=[weak,generation](){auto p=weak.lock();return p&&p->life.IsCurrent(generation)?p:std::shared_ptr<State>{};};
     s->events=true;
+    winrt::check_hresult(s->controller->add_GotFocus(Callback<ICoreWebView2FocusChangedEventHandler>([current](ICoreWebView2Controller*,IUnknown*)->HRESULT{if(auto s=current();s&&s->focus)s->focus(true);return S_OK;}).Get(),&s->gotFocus));
+    winrt::check_hresult(s->controller->add_LostFocus(Callback<ICoreWebView2FocusChangedEventHandler>([current](ICoreWebView2Controller*,IUnknown*)->HRESULT{if(auto s=current();s&&s->focus)s->focus(false);return S_OK;}).Get(),&s->lostFocus));
     winrt::check_hresult(s->view->add_NavigationStarting(Callback<ICoreWebView2NavigationStartingEventHandler>([current](ICoreWebView2*,ICoreWebView2NavigationStartingEventArgs* args)->HRESULT {
         if(auto s=current()) {s->loading=true;s->waiting=true;if(args)args->get_NavigationId(&s->navigationId);if(s->cancelGesture)s->cancelGesture();if(s->signal)s->signal({PageSignal::Typing,false});s->Report();}return S_OK;
     }).Get(),&s->starting));
@@ -170,7 +173,7 @@ void BrowserHost::Close() {
     auto s=state_;s->life.Close();
     if(s->cancelGesture)s->cancelGesture();
     s->ready=false;
-    s->status={};s->signal={};s->document={};s->cancelGesture={};s->newTab={};s->closeTab={};
+    s->status={};s->signal={};s->document={};s->focus={};s->cancelGesture={};s->newTab={};s->closeTab={};
     if(s->creation&&s->creation->result==E_PENDING)s->creation->Finish(E_ABORT);
     s->zoom.Detach();
     if(s->view&&s->events) {
@@ -179,6 +182,7 @@ void BrowserHost::Close() {
         s->view->remove_ContainsFullScreenElementChanged(s->fullscreen);s->view->remove_NewWindowRequested(s->newWindow);
         s->view->remove_WindowCloseRequested(s->closeWindow);s->view->remove_ProcessFailed(s->failed);
     }
+    if(s->controller&&s->events){s->controller->remove_GotFocus(s->gotFocus);s->controller->remove_LostFocus(s->lostFocus);}
     s->events=false;
     if(s->controller)s->controller->Close();
     s->view.reset();s->controller.reset();s->environment.reset();
@@ -190,6 +194,8 @@ void BrowserHost::NotifyParentMoved() {if(state_->controller)state_->controller-
 void BrowserHost::SetPageSignalHandler(std::function<void(PageSignal)> handler) {state_->signal=std::move(handler);}
 void BrowserHost::SetDocumentHandler(std::function<void(std::wstring,std::wstring)> handler) {state_->document=std::move(handler);}
 void BrowserHost::SetNavigationHandlers(std::function<void()> cancel,std::function<void(std::wstring)> newTab,std::function<void()> closeTab) {state_->cancelGesture=std::move(cancel);state_->newTab=std::move(newTab);state_->closeTab=std::move(closeTab);}
+void BrowserHost::SetFocusHandler(std::function<void(bool)> handler){state_->focus=std::move(handler);}
+void BrowserHost::Focus(){if(state_->controller&&state_->visible)state_->controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);}
 void BrowserHost::GoBack() {if(CanGoBack()){if(state_->cancelGesture)state_->cancelGesture();state_->view->GoBack();}}
 bool BrowserHost::CanGoBack() const {BOOL can=FALSE;if(state_->view)state_->view->get_CanGoBack(&can);return can!=FALSE;}
 void BrowserHost::RefreshOrStop() {if(state_->view){if(state_->loading)state_->view->Stop();else state_->view->Reload();}}

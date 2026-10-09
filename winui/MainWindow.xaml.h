@@ -5,6 +5,7 @@
 #include "settings/VersionedConfigStore.h"
 #include "window/WindowService.h"
 #include "window/TrayController.h"
+#include "input/InputService.h"
 namespace winrt::MiniWindow::implementation {
 struct MainWindow : MainWindowT<MainWindow> {
     MainWindow();
@@ -19,6 +20,8 @@ private:
     static LRESULT CALLBACK WindowProcedure(HWND,UINT,WPARAM,LPARAM,UINT_PTR,DWORD_PTR);
     void ApplyFrame(miniwindow::WindowMode);
     void SyncWindowState();
+    void HandleHotkey(miniwindow::HotkeyAction,miniwindow::HotkeyGesture);
+    void RefreshOwnedFocus();
     void StartBrowser();
     void LayoutBrowser();
     Windows::Foundation::IAsyncAction InitializeBrowserAsync();
@@ -32,6 +35,9 @@ private:
     std::unique_ptr<miniwindow::VersionedConfigStore> settings_;
     std::unique_ptr<miniwindow::WindowService> windowService_;
     std::unique_ptr<miniwindow::TrayController> tray_;
+    std::unique_ptr<miniwindow::InputService> input_;
+    bool webFullscreen_=false,webFocused_=false;
+    std::wstring inputError_;
     winrt::Windows::UI::ViewManagement::UISettings systemTheme_;
     winrt::event_token themeToken_{};
     std::filesystem::path directory_,profile_;

@@ -2,6 +2,7 @@
 
 #include "CoreLogic.h"
 
+#include <objbase.h>
 #include <UIAutomation.h>
 #include <wrl/client.h>
 
@@ -16,6 +17,8 @@
 #include <vector>
 
 #pragma comment(lib, "uiautomationcore.lib")
+#pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "advapi32.lib")
 
 namespace xiaochuang {
 
@@ -168,10 +171,12 @@ void InputGuard::Stop() {
         workerThread_ = nullptr;
     }
     workerState_.reset();
+    MSG pending{};while(applicationWindow_&&PeekMessageW(&pending,applicationWindow_,kMessageInputGuardResult,kMessageInputGuardResult,PM_REMOVE))delete reinterpret_cast<AsyncResult*>(pending.lParam);
     callback_ = {};
     applicationWindow_ = nullptr;
     nativeEdit_ = nullptr;
     webTyping_ = false;
+    ownedTextFocus_ = false;
     typing_ = false;
     externalObservationArmed_ = false;
     focusMessagePending_.store(false);
@@ -202,6 +207,8 @@ void InputGuard::SetWebTyping(bool typing) {
     Refresh();
 }
 
+void InputGuard::SetOwnedTextFocus(bool focused) {if(ownedTextFocus_==focused)return;ownedTextFocus_=focused;Refresh();}
+
 bool InputGuard::Refresh() {
     if (!enabled_) {
         ApplyTyping(false);
@@ -214,7 +221,7 @@ bool InputGuard::Refresh() {
     const bool applicationForeground = foregroundProcessId == GetCurrentProcessId();
     bool systemTyping = DetectSystemTextInput();
     if (!systemTyping && GetTickCount64() < imeTrailingUntil_) systemTyping = true;
-    const bool next = ShouldApplyWebTypingGuard(webTyping_, applicationForeground) || systemTyping;
+    const bool next = ShouldSuppressTyping(enabled_,ownedTextFocus_,webTyping_,applicationForeground,systemTyping);
     ApplyTyping(next);
     return typing_;
 }
@@ -227,24 +234,11 @@ void InputGuard::HandleAsyncResult(LPARAM resultPointer) {
     const HWND foreground = GetForegroundWindow();
     const DWORD threadId = foreground
         ? GetWindowThreadProcessId(foreground, &currentProcessId) : 0;
-    if (foreground != result->foreground || threadId != result->threadId) return;
-
     GUITHREADINFO info{sizeof(info)};
     const HWND focusedWindow = GetGUIThreadInfo(threadId, &info) ? info.hwndFocus : nullptr;
-    if (result->focusedWindow && focusedWindow && result->focusedWindow != focusedWindow) return;
-
-    // Some providers briefly return an element that belongs to the previously
-    // focused application. Never let that unrelated result suppress the
-    // current foreground application's hotkeys.
-    if (result->typing) {
-        const HWND foregroundRoot = foreground ? GetAncestor(foreground, GA_ROOT) : nullptr;
-        const HWND automationRoot = result->automationWindow
-            ? GetAncestor(result->automationWindow, GA_ROOT) : nullptr;
-        const bool matchingWindow = foregroundRoot && automationRoot == foregroundRoot;
-        const bool matchingProcess = result->automationProcessId != 0 &&
-            result->automationProcessId == currentProcessId;
-        if (!matchingWindow && !matchingProcess) return;
-    }
+    InputFocusSnapshot current{latestRequestSequence_,foreground,threadId,focusedWindow,foreground?GetAncestor(foreground,GA_ROOT):nullptr,currentProcessId};
+    InputObservation observed{result->sequence,result->foreground,result->threadId,result->focusedWindow,result->automationWindow?GetAncestor(result->automationWindow,GA_ROOT):nullptr,result->automationProcessId,result->typing};
+    if(!IsCurrentInputObservation(observed,current))return;
 
     automationForeground_ = result->foreground;
     automationThreadId_ = result->threadId;
@@ -391,15 +385,11 @@ DWORD WINAPI InputGuard::WorkerThreadProc(void* context) {
         result->typing = typing;
         result->automationAvailable = automation != nullptr;
 
-        HWND target = nullptr;
         {
             const std::lock_guard lock(state->mutex);
-            if (!state->stopping) target = state->applicationWindow;
+            if(!state->stopping&&state->applicationWindow&&PostMessageW(state->applicationWindow,kMessageInputGuardResult,0,reinterpret_cast<LPARAM>(result.get())))result.release();
         }
-        if (target && PostMessageW(target, kMessageInputGuardResult, 0,
-                                   reinterpret_cast<LPARAM>(result.get()))) {
-            result.release();
-        }
+
     }
     automation.Reset();
     if (SUCCEEDED(comResult)) CoUninitialize();

@@ -7,5 +7,10 @@
 const canvas=document.createElement('canvas');canvas.width=640;canvas.height=360;
 const context=canvas.getContext('2d');let frames=0;
 function draw(){context.fillStyle='#12382b';context.fillRect(0,0,640,360);context.fillStyle='#67dca2';context.font='40px system-ui';context.fillText('Mini Window '+(++frames),30,180);document.querySelector('#status').textContent='frames='+frames+' viewport='+innerWidth+'×'+innerHeight;requestAnimationFrame(draw)}draw();
-const video=document.querySelector('video');video.srcObject=canvas.captureStream(24);video.play();
+const video=document.querySelector('video');let fixtureReady=false;
+// Record a short local clip: MediaStream playback fixes playbackRate at 1 in Chromium.
+const stream=canvas.captureStream(24),chunks=[],recorder=new MediaRecorder(stream);
+recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+recorder.onstop=()=>{video.loop=true;video.src=URL.createObjectURL(new Blob(chunks,{type:recorder.mimeType}));video.play().then(()=>fixtureReady=true);stream.getTracks().forEach(t=>t.stop())};
+recorder.start();setTimeout(()=>recorder.stop(),1200);
 </script>
