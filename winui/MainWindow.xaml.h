@@ -37,6 +37,8 @@ private:
     void LayoutBrowser();
     Windows::Foundation::IAsyncAction InitializeBrowserAsync();
     Windows::Foundation::IAsyncAction ConfirmCloseAsync(std::wstring);
+    void SetDialogActive(bool);
+    int dialogDepth_=0;
     void ShowError(const std::wstring&);
     bool AcquireProfile(const std::filesystem::path&);
     HWND hwnd_=nullptr;

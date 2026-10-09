@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([ValidateSet('Debug','Release')][string]$Configuration='Release',[ValidateSet('x64')][string]$Platform='x64',[switch]$TestsOnly,[string]$OutputRoot,[switch]$SmokeTestAsInvoker)
+param([ValidateSet('Debug','Release')][string]$Configuration='Release',[ValidateSet('x64')][string]$Platform='x64',[switch]$TestsOnly,[string]$OutputRoot,[switch]$SmokeTestAsInvoker,[switch]$BuildOnly)
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
@@ -22,6 +22,7 @@ if(-not $TestsOnly){
  if(-not(Test-Path (Join-Path $OutputRoot 'app\MiniWindow.exe'))){throw 'WinUI EXE missing after build.'}
  Write-Output 'WINUI_BUILD_OK'
 }
+if($BuildOnly){Write-Output 'WINUI_TESTS_NOT_RUN_USER_ACCEPTANCE';return}
 $tests=Join-Path $root 'winui\tests\WinUICore.Tests.vcxproj'
 if(Test-Path $tests){
  Build 'winui-tests' $tests 'Rebuild' 'tests'

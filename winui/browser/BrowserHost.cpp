@@ -33,7 +33,7 @@ struct BrowserHost::State {
     xiaochuang::WebViewZoom zoom;
     AppSettings settings;
     RECT bounds{};
-    bool ready=false,loading=false,visible=true,waiting=false,events=false;
+    bool ready=false,loading=false,visible=true,occluded=false,waiting=false,events=false;
     UINT64 navigationId=0;
     uint64_t generation=0;
     std::wstring pendingUrl;
@@ -97,7 +97,7 @@ winrt::Windows::Foundation::IAsyncAction BrowserHost::InitializeAsync() {
                     result=s->zoom.Configure(s->settings);
                     if(FAILED(result)) {creation->Finish(result);return S_OK;}
                     controller->put_Bounds({0,0,s->bounds.right-s->bounds.left,s->bounds.bottom-s->bounds.top});
-                    controller->put_IsVisible(s->visible);
+                    controller->put_IsVisible(s->visible&&!s->occluded);
                     wil::com_ptr<ICoreWebView2Settings> settings;
                     if(SUCCEEDED(s->view->get_Settings(&settings))) settings->put_IsStatusBarEnabled(FALSE);
                     try {ConfigureEvents(s,generation);} catch(const winrt::hresult_error& error) {creation->Finish(error.code());return S_OK;}
@@ -132,13 +132,13 @@ void BrowserHost::ConfigureEvents(const std::shared_ptr<State>& s,uint64_t gener
         if(auto s=current()) {s->loading=true;s->waiting=true;if(args)args->get_NavigationId(&s->navigationId);if(s->cancelGesture)s->cancelGesture();if(s->signal)s->signal({PageSignal::Typing,false});s->Report();}return S_OK;
     }).Get(),&s->starting));
     winrt::check_hresult(s->view->add_ContentLoading(Callback<ICoreWebView2ContentLoadingEventHandler>([current](ICoreWebView2*,ICoreWebView2ContentLoadingEventArgs* args)->HRESULT {
-        if(auto s=current()) {UINT64 id=0;if(args)args->get_NavigationId(&id);if(id==s->navigationId){s->waiting=false;s->controller->put_IsVisible(s->visible);}}return S_OK;
+        if(auto s=current()) {UINT64 id=0;if(args)args->get_NavigationId(&id);if(id==s->navigationId){s->waiting=false;s->controller->put_IsVisible(s->visible&&!s->occluded);}}return S_OK;
     }).Get(),&s->content));
     winrt::check_hresult(s->view->add_NavigationCompleted(Callback<ICoreWebView2NavigationCompletedEventHandler>([current](ICoreWebView2*,ICoreWebView2NavigationCompletedEventArgs* args)->HRESULT {
         if(auto s=current()) {
             UINT64 id=0;BOOL ok=FALSE;if(args){args->get_NavigationId(&id);args->get_IsSuccess(&ok);}
             if(id!=s->navigationId)return S_OK;
-            s->waiting=false;s->loading=false;s->controller->put_IsVisible(s->visible);s->UpdateDocument();s->Report(ok?L"":L"网页加载失败，请重试或更换网址。");
+            s->waiting=false;s->loading=false;s->controller->put_IsVisible(s->visible&&!s->occluded);s->UpdateDocument();s->Report(ok?L"":L"网页加载失败，请重试或更换网址。");
         }return S_OK;
     }).Get(),&s->completed));
     winrt::check_hresult(s->view->add_SourceChanged(Callback<ICoreWebView2SourceChangedEventHandler>([current](ICoreWebView2*,ICoreWebView2SourceChangedEventArgs*)->HRESULT {if(auto s=current())s->UpdateDocument();return S_OK;}).Get(),&s->source));
@@ -171,16 +171,17 @@ OperationResult BrowserHost::Navigate(const std::wstring& url) {
     if(s->cancelGesture)s->cancelGesture();
     s->waiting=true;s->navigationId=0;s->controller->put_IsVisible(FALSE);
     const auto result=s->view->Navigate(url.c_str());
-    if(FAILED(result)){s->waiting=false;s->controller->put_IsVisible(s->visible);return {false,BrowserError(result)};}
+    if(FAILED(result)){s->waiting=false;s->controller->put_IsVisible(s->visible&&!s->occluded);return {false,BrowserError(result)};}
     return {};
 }
 void BrowserHost::SetVisible(bool visible) {
     auto s=state_;s->visible=visible||s->settings.backgroundMediaHotkeys;
     if(!visible&&s->cancelGesture)s->cancelGesture();
     if(!visible&&s->settings.autoPauseOnHide&&s->view) s->view->ExecuteScript(L"(()=>{const v=document.querySelector('video');if(v&&!v.paused)v.pause()})()",nullptr);
-    if(s->controller)s->controller->put_IsVisible(s->visible&&!s->waiting);
+    if(s->controller)s->controller->put_IsVisible(s->visible&&!s->occluded&&!s->waiting);
 }
 void BrowserHost::ExecuteMedia(MediaCommand command,int rate) {if(state_->ready)state_->view->ExecuteScript(xiaochuang::MediaBridge::CommandScript(command,rate).c_str(),nullptr);}
+void BrowserHost::SetOccluded(bool occluded){auto s=state_;s->occluded=occluded;if(s->surface)ShowWindow(s->surface,occluded?SW_HIDE:SW_SHOWNA);if(s->controller)s->controller->put_IsVisible(s->visible&&!occluded&&!s->waiting);}
 void BrowserHost::Close() {
     auto s=state_;s->life.Close();
     if(s->cancelGesture)s->cancelGesture();
@@ -216,7 +217,7 @@ void BrowserHost::SetPageSignalHandler(std::function<void(PageSignal)> handler) 
 void BrowserHost::SetDocumentHandler(std::function<void(std::wstring,std::wstring)> handler) {state_->document=std::move(handler);}
 void BrowserHost::SetNavigationHandlers(std::function<void()> cancel,std::function<void(std::wstring)> newTab,std::function<void()> closeTab) {state_->cancelGesture=std::move(cancel);state_->newTab=std::move(newTab);state_->closeTab=std::move(closeTab);}
 void BrowserHost::SetFocusHandler(std::function<void(bool)> handler){state_->focus=std::move(handler);}
-void BrowserHost::Focus(){if(state_->controller&&state_->visible)state_->controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);}
+void BrowserHost::Focus(){if(state_->controller&&state_->visible&&!state_->occluded)state_->controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);}
 void BrowserHost::GoBack() {if(CanGoBack()){if(state_->cancelGesture)state_->cancelGesture();state_->view->GoBack();}}
 bool BrowserHost::CanGoBack() const {BOOL can=FALSE;if(state_->view)state_->view->get_CanGoBack(&can);return can!=FALSE;}
 void BrowserHost::RefreshOrStop() {if(state_->view){if(state_->loading)state_->view->Stop();else state_->view->Reload();}}

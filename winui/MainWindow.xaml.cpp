@@ -7,6 +7,7 @@
 #include "window/ThemeSync.h"
 #include "input/OwnedFocus.h"
 #include <commctrl.h>
+#include <wil/resource.h>
 #include <windowsx.h>
 #pragma comment(lib,"comctl32.lib")
 #include "../src/ConfigStore.h"
@@ -65,6 +66,7 @@ MainWindow::MainWindow() {
     Root().Loaded([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get();self&&!self->closed_)self->StartBrowser();});
     Closed([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get()){self->closed_=true;if(self->management_)self->management_->Shutdown();if(self->immersionPanel_)self->immersionPanel_->Shutdown();if(self->coordinator_)self->coordinator_->Subscribe({});self->browserPort_.host=nullptr;if(self->input_)self->input_->Stop();self->systemTheme_.ColorValuesChanged(self->themeToken_);RemoveWindowSubclass(self->hwnd_,WindowProcedure,1);self->windowService_.reset();self->tray_.reset();if(self->browser_)self->browser_->Close();if(self->initialization_)self->initialization_.Cancel();self->browser_.reset();if(self->profileLock_){CloseHandle(self->profileLock_);self->profileLock_=nullptr;}}});
 }
+void MainWindow::SetDialogActive(bool active){dialogDepth_=std::max(0,dialogDepth_+(active?1:-1));if(browser_)browser_->SetOccluded(dialogDepth_>0);}
 void MainWindow::ShowError(const std::wstring& error) {const auto message=configError_+(configError_.empty()?L"":L"\n")+inputError_+error;ErrorText().Text(message);ErrorPanel().Visibility(message.empty()?Microsoft::UI::Xaml::Visibility::Collapsed:Microsoft::UI::Xaml::Visibility::Visible);}
 bool MainWindow::AcquireProfile(const std::filesystem::path& path) {
     auto identity=std::filesystem::absolute(path).wstring();for(auto& c:identity)c=static_cast<wchar_t>(towlower(c));
@@ -107,7 +109,7 @@ Windows::Foundation::IAsyncAction MainWindow::InitializeBrowserAsync() {
     starting_=false;
 }
 Windows::Foundation::IAsyncAction MainWindow::ConfirmCloseAsync(std::wstring error) {
-    auto lifetime=get_strong();
+    auto lifetime=get_strong();SetDialogActive(true);auto occlusion=wil::scope_exit([this]{SetDialogActive(false);});
     try {
         Microsoft::UI::Xaml::Controls::ContentDialog dialog;dialog.XamlRoot(Root().XamlRoot());
         dialog.Title(box_value(L"配置未保存"));dialog.Content(box_value(error));
@@ -261,6 +263,6 @@ void MainWindow::OpenImmersionPanel(){
  if(!immersionPanel_){immersionPanel_=make_self<ImmersionPanel>();immersionPanel_->Bind(hwnd_,*coordinator_,[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_)self->RefreshOwnedFocus();},[weak=get_weak()](UINT key,UINT modifiers){if(auto self=weak.get();self&&!self->closed_)return self->input_->CaptureKey(key,modifiers);return false;});windowService_->SetCursorExclusion([weak=get_weak()](POINT point){if(auto self=weak.get();self&&self->immersionPanel_)return self->immersionPanel_->ContainsScreenPoint(point);return false;});}
  input_->CancelGesture();immersionPanel_->Open();
 }
-Windows::Foundation::IAsyncAction MainWindow::ToggleBookmarkAsync(){auto lifetime=get_strong();const auto tab=state_.tabs[static_cast<size_t>(state_.currentTabIndex)];for(size_t i=0;i<state_.bookmarks.size();++i)if(state_.bookmarks[i].url==tab.url){if(co_await miniwindow::ui::Confirm(Root().XamlRoot(),L"取消收藏？",state_.bookmarks[i].title,L"取消收藏"))coordinator_->DeleteBookmark(i);co_return;}coordinator_->SaveBookmark({}, {tab.title.empty()?tab.url:tab.title,tab.url});}
+Windows::Foundation::IAsyncAction MainWindow::ToggleBookmarkAsync(){auto lifetime=get_strong();SetDialogActive(true);auto occlusion=wil::scope_exit([this]{SetDialogActive(false);});const auto tab=state_.tabs[static_cast<size_t>(state_.currentTabIndex)];for(size_t i=0;i<state_.bookmarks.size();++i)if(state_.bookmarks[i].url==tab.url){if(co_await miniwindow::ui::Confirm(Root().XamlRoot(),L"取消收藏？",state_.bookmarks[i].title,L"取消收藏"))coordinator_->DeleteBookmark(i);co_return;}coordinator_->SaveBookmark({}, {tab.title.empty()?tab.url:tab.title,tab.url});}
 Windows::Foundation::IAsyncAction MainWindow::RequestCloseAsync(){auto lifetime=get_strong();try{if(management_&&!co_await management_->CanLeaveAsync()){closePending_=false;co_return;}state_.session.normalRect=windowService_->NormalRect();state_.session.maximized=windowService_->VisibleMode()==miniwindow::WindowMode::Maximized;const auto result=settings_->Save(state_);if(result.ok){closeApproved_=true;Close();}else{windowService_->RestoreNormal();SyncWindowState();co_await ConfirmCloseAsync(result.message);}}catch(const hresult_error& error){ShowError(std::wstring(error.message()));}closePending_=false;}
 }

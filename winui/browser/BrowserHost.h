@@ -12,6 +12,7 @@ public:
     winrt::Windows::Foundation::IAsyncAction InitializeAsync();
     OperationResult Navigate(const std::wstring&) override;
     void SetVisible(bool) override;
+    void SetOccluded(bool);
     void ExecuteMedia(MediaCommand,int) override;
     void Close() override;
     OperationResult SetFixedZoom(bool,int);
