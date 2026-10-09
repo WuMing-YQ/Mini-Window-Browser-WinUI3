@@ -71,6 +71,9 @@ inline std::array<HotkeyBinding, kHotkeyCount> DefaultHotkeys() {
 }
 
 struct AppSettings {
+    int hoverReductionPercent = 100;
+    bool windowWheelEnabled = true;
+    UINT windowWheelModifiers = MOD_CONTROL | MOD_ALT;
     int holeRadius = 400;
     int snapThreshold = 20;
     int holeOpacityPercent = 100;
@@ -91,6 +94,9 @@ struct AppSettings {
     std::wstring homeUrl = L"https://www.bilibili.com";
 
     void Clamp() {
+        hoverReductionPercent = std::clamp(hoverReductionPercent, 0, 100);
+        constexpr UINT allowedWheelModifiers = MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_WIN;
+        if (windowWheelModifiers == 0 || (windowWheelModifiers & ~allowedWheelModifiers) != 0) windowWheelModifiers = MOD_CONTROL | MOD_ALT;
         holeRadius = std::clamp(holeRadius, 0, 4000);
         snapThreshold = std::clamp(snapThreshold, 0, 200);
         holeOpacityPercent = std::clamp(holeOpacityPercent, 0, 100);
@@ -117,6 +123,9 @@ struct Preset {
     std::wstring name = L"预设";
     RECT normalRect{100, 100, 1100, 700};
     bool maximized = false;
+    int hoverReductionPercent = 100;
+    bool windowWheelEnabled = true;
+    UINT windowWheelModifiers = MOD_CONTROL | MOD_ALT;
     int holeRadius = 400;
     int snapThreshold = 20;
     int holeOpacityPercent = 100;

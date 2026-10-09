@@ -74,6 +74,9 @@ try {
  if($process.MainWindowHandle -eq 0){throw 'Test application has no HWND.'}
  [void]$process.CloseMainWindow()
  $result.close=$process.WaitForExit(10000)
+ $config=Join-Path $directory 'config.winui.ini'
+ $result.configSaved=(Test-Path $config) -and ([IO.File]::ReadAllText($config).Contains('SchemaVersion=1')) -and ([IO.File]::ReadAllText($config).Contains($fixtureUrl))
+ if(-not $result.configSaved){throw 'Window closed without saving its versioned session.'}
  if(-not($result.navigation -and $result.media -and $result.close)){throw 'Browser smoke assertions failed.'}
  $result|ConvertTo-Json -Depth 5|Set-Content $report -Encoding UTF8
  $result|ConvertTo-Json -Depth 5
