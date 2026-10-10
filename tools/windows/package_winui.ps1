@@ -43,38 +43,50 @@ try{
  if(-not $crt){throw 'Native x64 VC redistributable CRT folder missing.'}
  Copy-Item (Join-Path $crt.FullName '*.dll') $payload -Force
  foreach($required in @('vcruntime140.dll','vcruntime140_1.dll','msvcp140.dll')){if(-not(Test-Path (Join-Path $payload $required))){throw ('Missing native CRT: '+$required)}}
- $licenseDirectory=Join-Path $documentation 'licenses'
- New-Item -ItemType Directory -Path $licenseDirectory | Out-Null
- Copy-Item (Join-Path $SourceDirectory 'LICENSE.txt') (Join-Path $licenseDirectory 'MiniWindow-GPL-3.0.txt')
  [xml]$packages=Get-Content (Join-Path $SourceDirectory 'winui/packages.config')
  $dependencies=@()
+ $noticeGroups=[ordered]@{}
  foreach($dependency in $packages.packages.package){
   $dependencies+=@{name=$dependency.id;version=$dependency.version}
   $directory=Join-Path $SourceDirectory ('winui/packages/'+$dependency.id+'.'+$dependency.version)
   $notices=@(Get-ChildItem $directory -File -Recurse | Where-Object {$_.Name -match '^(LICENSE|NOTICE|ThirdPartyNotices|EULA)([._-]|$)'})
-  if($notices.Count){$target=Join-Path $licenseDirectory ($dependency.id+'.'+$dependency.version);New-Item -ItemType Directory -Path $target | Out-Null;foreach($notice in $notices){$relative=$notice.FullName.Substring($directory.Length).TrimStart('\');$dest=Join-Path $target $relative;New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null;Copy-Item $notice.FullName $dest}}
+  foreach($notice in ($notices | Sort-Object FullName)){
+   # Keep every distinct notice verbatim, but store identical package notices once.
+   $hash=(Get-FileHash $notice.FullName -Algorithm SHA256).Hash
+   if(-not $noticeGroups.Contains($hash)){$noticeGroups[$hash]=@{sources=[Collections.Generic.List[string]]::new();text=[IO.File]::ReadAllText($notice.FullName)}}
+   $relative=$notice.FullName.Substring($directory.Length).TrimStart('\').Replace('\','/')
+   $noticeGroups[$hash].sources.Add(($dependency.id+'.'+$dependency.version+'/'+$relative))
+  }
  }
- @'
+ $thirdPartyHeader=@'
 MiniWindow WinUI edition is derived from azurplain/Mini-Window-Browser (GPL-3.0).
 Source and build instructions accompany this private test delivery.
-Microsoft Windows App SDK / WinUI and WebView2 packages: see included package licenses.
+Microsoft Windows App SDK / WinUI, WebView2 and build dependencies: notices below.
+Identical texts are included once, with all applicable package/source names listed.
 Microsoft Visual C++ Runtime DLLs are redistributed from the licensed Visual Studio redist directory.
 Microsoft Visual Studio license and REDIST list govern those native runtime files:
 https://visualstudio.microsoft.com/license-terms/
 WebView2 Evergreen Runtime is a separately installed prerequisite; it is not bundled or downloaded.
 No Flutter, Dart or .NET application runtime is used.
-'@ | Set-Content (Join-Path $licenseDirectory 'THIRD-PARTY-NOTICES.txt') -Encoding UTF8
+'@
+ $combined=[Text.StringBuilder]::new()
+ [void]$combined.AppendLine($thirdPartyHeader)
+ foreach($group in $noticeGroups.Values){
+  [void]$combined.AppendLine("`n================================================================")
+  [void]$combined.AppendLine('Applies to these package files:')
+  foreach($sourceName in $group.sources){[void]$combined.AppendLine(' - '+$sourceName)}
+  [void]$combined.AppendLine('----------------------------------------------------------------')
+  [void]$combined.AppendLine($group.text)
+ }
+ [IO.File]::WriteAllText((Join-Path $documentation 'THIRD-PARTY-NOTICES.txt'),$combined.ToString(),[Text.UTF8Encoding]::new($false))
  Copy-Item (Join-Path $SourceDirectory 'docs/validation/winui-redesign.md') (Join-Path $documentation '使用说明.md')
  $readme=Get-Content (Join-Path $SourceDirectory 'README.md') -Raw -Encoding UTF8
- $readme=$readme.Replace('src="assets/MiniWindow.png"','src="docs/assets/MiniWindow.png"').Replace('](LICENSE.txt)','](docs/LICENSE.txt)')
+ $readme=$readme.Replace('src="assets/MiniWindow.png"','src="docs/assets/MiniWindow.png"').Replace('](LICENSE.txt)','](docs/LICENSE.txt)').Replace('docs/validation/winui-redesign.md','docs/使用说明.md')
  [IO.File]::WriteAllText((Join-Path $package 'README.md'),$readme,[Text.UTF8Encoding]::new($false))
  $readmeAssets=Join-Path $documentation 'assets'
  New-Item -ItemType Directory -Force $readmeAssets | Out-Null
  Copy-Item (Join-Path $SourceDirectory 'assets/MiniWindow.png') (Join-Path $readmeAssets 'MiniWindow.png')
  Copy-Item (Join-Path $SourceDirectory 'LICENSE.txt') (Join-Path $documentation 'LICENSE.txt')
- $guideDirectory=Join-Path $package 'docs/validation'
- New-Item -ItemType Directory -Force $guideDirectory | Out-Null
- Copy-Item (Join-Path $SourceDirectory 'docs/validation/winui-redesign.md') (Join-Path $guideDirectory 'winui-redesign.md')
  $sourceManifest=Join-Path $SourceDirectory 'source-manifest.json'
  if(-not(Test-Path $sourceManifest)){throw 'Missing staging source-manifest.json. Stage with tools/sync_windows.py.'}
  $source=Get-Content $sourceManifest -Raw -Encoding UTF8 | ConvertFrom-Json
