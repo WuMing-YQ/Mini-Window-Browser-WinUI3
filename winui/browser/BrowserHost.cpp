@@ -1,6 +1,7 @@
 #include <unknwn.h>
 #include "BrowserHost.h"
 #include "WebLifecycle.h"
+#include "InputTrace.h"
 #include "../../src/WebViewZoom.h"
 #include "../../src/ConfigStore.h"
 #include <winrt/Microsoft.UI.Dispatching.h>
@@ -72,6 +73,7 @@ winrt::Windows::Foundation::IAsyncAction BrowserHost::InitializeAsync() {
     // redirected input path, which bypasses ordinary child HWND mouse messages).
     if(!state->surface) {
         WNDCLASSW windowClass{};windowClass.lpfnWndProc=[](HWND hwnd,UINT message,WPARAM w,LPARAM l)->LRESULT{
+            if(message==WM_NCHITTEST||message==WM_LBUTTONDOWN||message==WM_MOUSEWHEEL||message==WM_POINTERDOWN)TraceBrowserInput("native-websurface",message);
             if(message==WM_NCHITTEST)return HTTRANSPARENT;
             return DefWindowProcW(hwnd,message,w,l);
         };
@@ -137,6 +139,7 @@ winrt::Windows::Foundation::IAsyncAction BrowserHost::InitializeAsync() {
     if(!state->life.IsCurrent(generation)) co_return;
     if(FAILED(creation->result)) {state->Report(BrowserError(creation->result));co_return;}
     state->ready=true;
+    TraceBrowserInput("controller-ready");TraceBrowserWindows(state->parent);
     state->Report();
     if(!state->pendingUrl.empty()) {
         state->waiting=true;
@@ -243,9 +246,12 @@ void BrowserHost::SetNavigationHandlers(std::function<void()> cancel,std::functi
 void BrowserHost::SetFocusHandler(std::function<void(bool)> handler){state_->focus=std::move(handler);}
 void BrowserHost::Focus(){if(state_->controller&&state_->visible&&!state_->occluded)state_->controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);}
 bool BrowserHost::SendMouseInput(UINT message,UINT keys,UINT data,POINT point){
-    auto s=state_;if(!s->composition||!s->ready||!s->visible||s->occluded||s->waiting)return false;
+    auto s=state_;const int blocked=(!s->composition?1:0)|(!s->ready?2:0)|(!s->visible?4:0)|(s->occluded?8:0)|(s->waiting?16:0);
+    TraceBrowserInput("send-mouse-enter",message,blocked);
+    if(blocked)return false;
     if(message==WM_MOUSELEAVE){keys=0;data=0;point={};}
     const auto result=s->composition->SendMouseInput(static_cast<COREWEBVIEW2_MOUSE_EVENT_KIND>(message),static_cast<COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS>(keys),data,point);
+    TraceBrowserInput("send-mouse-result",message,result);
     if(message!=WM_MOUSELEAVE){HCURSOR cursor=nullptr;if(SUCCEEDED(s->composition->get_Cursor(&cursor))&&cursor)SetCursor(cursor);}
     return SUCCEEDED(result);
 }

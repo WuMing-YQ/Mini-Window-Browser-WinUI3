@@ -6,6 +6,7 @@
 #include "management/UIHelpers.h"
 #include "window/ThemeSync.h"
 #include "input/OwnedFocus.h"
+#include "browser/InputTrace.h"
 #include <commctrl.h>
 #include <wil/resource.h>
 #include <windowsx.h>
@@ -22,6 +23,7 @@
 namespace winrt::MiniWindow::implementation {
 MainWindow::MainWindow() {
     InitializeComponent();
+    miniwindow::TraceBrowserInput("startup-input-diagnostics");
     winrt::check_hresult(this->try_as<IWindowNative>()->get_WindowHandle(&hwnd_));
     wchar_t executable[32768]{};GetModuleFileNameW(nullptr,executable,32768);
     directory_=std::filesystem::path(executable).parent_path();
@@ -169,6 +171,7 @@ void MainWindow::ImmersionClick(Windows::Foundation::IInspectable const&,Microso
 void MainWindow::HideClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&){auto result=windowService_->SetHidden(true);SyncWindowState();if(!result.ok)ShowError(result.message);}
 LRESULT CALLBACK MainWindow::WindowProcedure(HWND hwnd,UINT message,WPARAM parameter,LPARAM data,UINT_PTR,DWORD_PTR reference) {
     auto self=reinterpret_cast<MainWindow*>(reference);if(!self||self->closed_)return DefSubclassProc(hwnd,message,parameter,data);
+    if(message==WM_NCHITTEST||message==WM_LBUTTONDOWN||message==WM_MOUSEWHEEL||message==WM_POINTERDOWN)miniwindow::TraceBrowserInput("native-main",message);
     if(self->input_)self->input_->OnMessage(message,parameter,data);
     if(self->tray_)self->tray_->HandleMessage(message,parameter,data);
     if(self->windowService_) {
@@ -186,6 +189,12 @@ LRESULT CALLBACK MainWindow::WindowProcedure(HWND hwnd,UINT message,WPARAM param
 
 void MainWindow::InitializeBrowserInput(){
     using namespace Microsoft::UI::Xaml::Input;
+    auto observe=[weak=get_weak()](UINT kind){return PointerEventHandler([weak,kind](auto&&,PointerRoutedEventArgs const& args){if(auto self=weak.get()){
+        miniwindow::TraceBrowserInput("xaml-root",kind,(args.Handled()?1:0)|(self->dialogDepth_>0?2:0)|(self->windowService_->Immersive()?4:0)|(self->windowService_->Hidden()?8:0));
+    }});};
+    Root().AddHandler(Microsoft::UI::Xaml::UIElement::PointerPressedEvent(),box_value(observe(WM_LBUTTONDOWN)),true);
+    Root().AddHandler(Microsoft::UI::Xaml::UIElement::PointerWheelChangedEvent(),box_value(observe(WM_MOUSEWHEEL)),true);
+    Root().AddHandler(Microsoft::UI::Xaml::UIElement::PointerMovedEvent(),box_value(observe(WM_MOUSEMOVE)),true);
     auto forward=[weak=get_weak()](UINT kind){return [weak,kind](auto&&,PointerRoutedEventArgs const& args){if(auto self=weak.get();self&&!self->closed_)self->ForwardBrowserPointer(kind,args);};};
     WebSlot().PointerPressed(forward(WM_LBUTTONDOWN));
     WebSlot().PointerReleased(forward(WM_LBUTTONUP));
@@ -203,7 +212,9 @@ void MainWindow::InitializeBrowserInput(){
     WebSlot().PointerCaptureLost(cancel);WebSlot().PointerCanceled(cancel);
 }
 void MainWindow::ForwardBrowserPointer(UINT kind,Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args){
+    miniwindow::TraceBrowserInput("xaml-webslot",kind,(!browser_?1:0)|(dialogDepth_>0?2:0)|(windowService_->Immersive()?4:0)|(windowService_->Hidden()?8:0));
     if(!browser_||dialogDepth_>0||windowService_->Immersive()||windowService_->Hidden())return;
+    miniwindow::TraceBrowserInput("pointer-device",kind,static_cast<int>(args.Pointer().PointerDeviceType()));
     if(args.Pointer().PointerDeviceType()!=Microsoft::UI::Input::PointerDeviceType::Mouse)return;
     const auto point=args.GetCurrentPoint(WebSlot());const auto properties=point.Properties();
     const double scale=GetDpiForWindow(hwnd_)/96.0;
