@@ -8,6 +8,8 @@
 #include <WebView2EnvironmentOptions.h>
 #include <wrl.h>
 #include <vector>
+#include <dcomp.h>
+#pragma comment(lib,"dcomp.lib")
 using Microsoft::WRL::Callback;
 namespace miniwindow {
 namespace {
@@ -29,6 +31,10 @@ struct BrowserHost::State {
     WebLifecycle life;
     wil::com_ptr<ICoreWebView2Environment> environment;
     wil::com_ptr<ICoreWebView2Controller> controller;
+    wil::com_ptr<ICoreWebView2CompositionController> composition;
+    wil::com_ptr<IDCompositionDevice> device;
+    wil::com_ptr<IDCompositionTarget> target;
+    wil::com_ptr<IDCompositionVisual> visual;
     wil::com_ptr<ICoreWebView2> view;
     xiaochuang::WebViewZoom zoom;
     AppSettings settings;
@@ -61,17 +67,26 @@ winrt::Windows::Foundation::IAsyncAction BrowserHost::InitializeAsync() {
     auto state=state_;
     const auto generation=state->life.Begin();state->generation=generation;
     state->ready=false;state->loading=false;
-    // Own the native airspace: the XAML child island otherwise covers the
-    // windowed WebView2 controller, even while its document/media keep running.
+    // This child owns only the visual. WinUI owns hit testing and explicitly
+    // forwards pointer events to the composition controller (including Win11's
+    // redirected input path, which bypasses ordinary child HWND mouse messages).
     if(!state->surface) {
-        WNDCLASSW windowClass{};windowClass.lpfnWndProc=DefWindowProcW;
-        windowClass.hInstance=GetModuleHandleW(nullptr);windowClass.lpszClassName=L"MiniWindow.BrowserSurface";
+        WNDCLASSW windowClass{};windowClass.lpfnWndProc=[](HWND hwnd,UINT message,WPARAM w,LPARAM l)->LRESULT{
+            if(message==WM_NCHITTEST)return HTTRANSPARENT;
+            return DefWindowProcW(hwnd,message,w,l);
+        };
+        windowClass.hInstance=GetModuleHandleW(nullptr);windowClass.lpszClassName=L"MiniWindow.BrowserCompositionSurface";
         if(!RegisterClassW(&windowClass)&&GetLastError()!=ERROR_CLASS_ALREADY_EXISTS){state->Report(BrowserError(HRESULT_FROM_WIN32(GetLastError())));co_return;}
         state->surface=CreateWindowExW(0,windowClass.lpszClassName,L"",WS_CHILD|WS_VISIBLE|WS_CLIPCHILDREN|WS_CLIPSIBLINGS,
             state->bounds.left,state->bounds.top,state->bounds.right-state->bounds.left,state->bounds.bottom-state->bounds.top,state->parent,nullptr,windowClass.hInstance,nullptr);
         if(!state->surface){state->Report(BrowserError(HRESULT_FROM_WIN32(GetLastError())));co_return;}
         SetWindowPos(state->surface,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
     }
+    winrt::check_hresult(DCompositionCreateDevice(nullptr,IID_PPV_ARGS(state->device.put())));
+    winrt::check_hresult(state->device->CreateTargetForHwnd(state->surface,TRUE,&state->target));
+    winrt::check_hresult(state->device->CreateVisual(&state->visual));
+    winrt::check_hresult(state->target->SetRoot(state->visual.get()));
+    winrt::check_hresult(state->device->Commit());
     auto creation=std::make_shared<Creation>();
     if(!creation->event) {state->Report(L"无法创建浏览器初始化事件。");co_return;}
     state->creation=creation;
@@ -84,15 +99,22 @@ winrt::Windows::Foundation::IAsyncAction BrowserHost::InitializeAsync() {
             if(!s||!s->life.IsCurrent(generation)) {creation->Finish(E_ABORT);return S_OK;}
             if(FAILED(result)||!environment) {creation->Finish(FAILED(result)?result:E_FAIL);return S_OK;}
             s->environment=environment;
-            const auto controllerResult=environment->CreateCoreWebView2Controller(s->surface,
-                Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>([weak,generation,creation](HRESULT result,ICoreWebView2Controller* controller)->HRESULT {
+            auto compositionEnvironment=s->environment.try_query<ICoreWebView2Environment3>();
+            if(!compositionEnvironment){creation->Finish(E_NOINTERFACE);return S_OK;}
+            const auto controllerResult=compositionEnvironment->CreateCoreWebView2CompositionController(s->surface,
+                Callback<ICoreWebView2CreateCoreWebView2CompositionControllerCompletedHandler>([weak,generation,creation](HRESULT result,ICoreWebView2CompositionController* composition)->HRESULT {
+                    wil::com_ptr<ICoreWebView2Controller> controller;
+                    if(composition)composition->QueryInterface(IID_PPV_ARGS(controller.put()));
                     auto s=weak.lock();
                     if(!s||!s->life.IsCurrent(generation)) {if(controller)controller->Close();creation->Finish(E_ABORT);return S_OK;}
                     if(FAILED(result)||!controller) {creation->Finish(FAILED(result)?result:E_FAIL);return S_OK;}
-                    s->controller=controller;
+                    s->controller=controller;s->composition=composition;
+                    result=composition->put_RootVisualTarget(s->visual.get());
+                    if(SUCCEEDED(result))result=s->device->Commit();
+                    if(FAILED(result)){creation->Finish(result);return S_OK;}
                     result=controller->get_CoreWebView2(&s->view);
                     if(FAILED(result)) {creation->Finish(result);return S_OK;}
-                    result=s->zoom.Attach(controller,s->view.get());
+                    result=s->zoom.Attach(controller.get(),s->view.get());
                     if(FAILED(result)) {creation->Finish(result);return S_OK;}
                     result=s->zoom.Configure(s->settings);
                     if(FAILED(result)) {creation->Finish(result);return S_OK;}
@@ -197,8 +219,10 @@ void BrowserHost::Close() {
     }
     if(s->controller&&s->events){s->controller->remove_GotFocus(s->gotFocus);s->controller->remove_LostFocus(s->lostFocus);}
     s->events=false;
+    if(s->composition)s->composition->put_RootVisualTarget(nullptr);
     if(s->controller)s->controller->Close();
-    s->view.reset();s->controller.reset();s->environment.reset();
+    s->view.reset();s->controller.reset();s->composition.reset();s->environment.reset();
+    s->visual.reset();s->target.reset();s->device.reset();
     if(s->surface){DestroyWindow(s->surface);s->surface=nullptr;}
 }
 OperationResult BrowserHost::SetFixedZoom(bool enabled,int percent){auto next=state_->settings;next.fixedWebZoomEnabled=enabled;next.fixedWebZoomPercent=percent;return Configure(next);}
@@ -218,6 +242,13 @@ void BrowserHost::SetDocumentHandler(std::function<void(std::wstring,std::wstrin
 void BrowserHost::SetNavigationHandlers(std::function<void()> cancel,std::function<void(std::wstring)> newTab,std::function<void()> closeTab) {state_->cancelGesture=std::move(cancel);state_->newTab=std::move(newTab);state_->closeTab=std::move(closeTab);}
 void BrowserHost::SetFocusHandler(std::function<void(bool)> handler){state_->focus=std::move(handler);}
 void BrowserHost::Focus(){if(state_->controller&&state_->visible&&!state_->occluded)state_->controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);}
+bool BrowserHost::SendMouseInput(UINT message,UINT keys,UINT data,POINT point){
+    auto s=state_;if(!s->composition||!s->ready||!s->visible||s->occluded||s->waiting)return false;
+    if(message==WM_MOUSELEAVE){keys=0;data=0;point={};}
+    const auto result=s->composition->SendMouseInput(static_cast<COREWEBVIEW2_MOUSE_EVENT_KIND>(message),static_cast<COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS>(keys),data,point);
+    if(message!=WM_MOUSELEAVE){HCURSOR cursor=nullptr;if(SUCCEEDED(s->composition->get_Cursor(&cursor))&&cursor)SetCursor(cursor);}
+    return SUCCEEDED(result);
+}
 void BrowserHost::GoBack() {if(CanGoBack()){if(state_->cancelGesture)state_->cancelGesture();state_->view->GoBack();}}
 bool BrowserHost::CanGoBack() const {BOOL can=FALSE;if(state_->view)state_->view->get_CanGoBack(&can);return can!=FALSE;}
 void BrowserHost::RefreshOrStop() {if(state_->view){if(state_->loading)state_->view->Stop();else state_->view->Reload();}}

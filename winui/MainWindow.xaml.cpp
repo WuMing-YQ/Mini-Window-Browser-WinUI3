@@ -80,7 +80,8 @@ MainWindow::MainWindow() {
         const SIZE minimum{std::max(1L,MulDiv(160,dpi,96)-frame.left-frame.right),std::max(1L,MulDiv(120,dpi,96)-frame.top-frame.bottom)};
         const auto target=miniwindow::ResizeWindowBySteps(frame.Visible(current),steps,monitor.rcMonitor,minimum,self->state_.settings.snapThreshold);
         return self->windowService_->ResizeNormal(frame.Outer(target));}return {false,L"窗口已关闭。"};});
-    Root().AddHandler(Microsoft::UI::Xaml::UIElement::PointerWheelChangedEvent(),box_value(Microsoft::UI::Xaml::Input::PointerEventHandler([weak=get_weak()](auto&&,Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args){if(auto self=weak.get();self&&!self->closed_){const auto point=args.GetCurrentPoint(self->Root());if(!point.Properties().IsHorizontalMouseWheel()&&self->input_->TryHandleWheel(point.Properties().MouseWheelDelta(),miniwindow::CurrentKeyModifiers()))args.Handled(true);}})),true);
+    Root().AddHandler(Microsoft::UI::Xaml::UIElement::PointerWheelChangedEvent(),box_value(Microsoft::UI::Xaml::Input::PointerEventHandler([weak=get_weak()](auto&&,Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args){if(auto self=weak.get();self&&!self->closed_){const auto point=args.GetCurrentPoint(self->Root());if(!args.Handled()&&!point.Properties().IsHorizontalMouseWheel()&&self->input_->TryHandleWheel(point.Properties().MouseWheelDelta(),miniwindow::CurrentKeyModifiers()))args.Handled(true);}})),true);
+    InitializeBrowserInput();
     input_->Start();
     Root().Loaded([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get();self&&!self->closed_)self->StartBrowser();});
     Closed([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get()){self->closed_=true;if(self->management_)self->management_->Shutdown();if(self->immersionPanel_)self->immersionPanel_->Shutdown();if(self->coordinator_)self->coordinator_->Subscribe({});self->browserPort_.host=nullptr;if(self->input_)self->input_->Stop();self->systemTheme_.ColorValuesChanged(self->themeToken_);RemoveWindowSubclass(self->hwnd_,WindowProcedure,1);self->windowService_.reset();self->tray_.reset();if(self->browser_)self->browser_->Close();if(self->initialization_)self->initialization_.Cancel();self->browser_.reset();if(self->profileLock_){CloseHandle(self->profileLock_);self->profileLock_=nullptr;}}});
@@ -181,6 +182,59 @@ LRESULT CALLBACK MainWindow::WindowProcedure(HWND hwnd,UINT message,WPARAM param
         if(message==WM_DPICHANGED||message==WM_WINDOWPOSCHANGED)self->LayoutBrowser();
     }
     return DefSubclassProc(hwnd,message,parameter,data);
+}
+
+void MainWindow::InitializeBrowserInput(){
+    using namespace Microsoft::UI::Xaml::Input;
+    auto forward=[weak=get_weak()](UINT kind){return [weak,kind](auto&&,PointerRoutedEventArgs const& args){if(auto self=weak.get();self&&!self->closed_)self->ForwardBrowserPointer(kind,args);};};
+    WebSlot().PointerPressed(forward(WM_LBUTTONDOWN));
+    WebSlot().PointerReleased(forward(WM_LBUTTONUP));
+    WebSlot().PointerMoved(forward(WM_MOUSEMOVE));
+    WebSlot().PointerExited(forward(WM_MOUSELEAVE));
+    WebSlot().PointerWheelChanged(forward(WM_MOUSEWHEEL));
+    auto cancel=[weak=get_weak()](auto&&,PointerRoutedEventArgs const&){if(auto self=weak.get();self&&self->browser_){
+        // Release only buttons forwarded to WebView; never leave a stuck drag
+        // after capture loss, a dialog, or a mode switch.
+        for(auto pair:{std::pair<UINT,UINT>{MK_LBUTTON,WM_LBUTTONUP},{MK_RBUTTON,WM_RBUTTONUP},{MK_MBUTTON,WM_MBUTTONUP},{MK_XBUTTON1,WM_XBUTTONUP},{MK_XBUTTON2,WM_XBUTTONUP}}){
+            if(self->browserButtons_&pair.first){self->browserButtons_&=~pair.first;self->browser_->SendMouseInput(pair.second,self->browserButtons_,pair.first==MK_XBUTTON1?XBUTTON1:pair.first==MK_XBUTTON2?XBUTTON2:0,self->browserPointer_);}
+        }
+        self->browser_->SendMouseInput(WM_MOUSELEAVE,0,0,{});
+    }};
+    WebSlot().PointerCaptureLost(cancel);WebSlot().PointerCanceled(cancel);
+}
+void MainWindow::ForwardBrowserPointer(UINT kind,Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args){
+    if(!browser_||dialogDepth_>0||windowService_->Immersive()||windowService_->Hidden())return;
+    if(args.Pointer().PointerDeviceType()!=Microsoft::UI::Input::PointerDeviceType::Mouse)return;
+    const auto point=args.GetCurrentPoint(WebSlot());const auto properties=point.Properties();
+    const double scale=GetDpiForWindow(hwnd_)/96.0;
+    POINT pixels{static_cast<LONG>(std::lround(point.Position().X*scale)),static_cast<LONG>(std::lround(point.Position().Y*scale))};
+    UINT keys=(properties.IsLeftButtonPressed()?MK_LBUTTON:0)|(properties.IsRightButtonPressed()?MK_RBUTTON:0)|(properties.IsMiddleButtonPressed()?MK_MBUTTON:0)|(properties.IsXButton1Pressed()?MK_XBUTTON1:0)|(properties.IsXButton2Pressed()?MK_XBUTTON2:0);
+    if(GetKeyState(VK_SHIFT)&0x8000)keys|=MK_SHIFT;if(GetKeyState(VK_CONTROL)&0x8000)keys|=MK_CONTROL;
+    UINT data=0,button=0;const bool pressed=kind==WM_LBUTTONDOWN,released=kind==WM_LBUTTONUP;
+    if(pressed||released){
+        using Microsoft::UI::Input::PointerUpdateKind;
+        switch(properties.PointerUpdateKind()){
+        case PointerUpdateKind::LeftButtonPressed:case PointerUpdateKind::LeftButtonReleased:button=MK_LBUTTON;kind=pressed?WM_LBUTTONDOWN:WM_LBUTTONUP;break;
+        case PointerUpdateKind::RightButtonPressed:case PointerUpdateKind::RightButtonReleased:button=MK_RBUTTON;kind=pressed?WM_RBUTTONDOWN:WM_RBUTTONUP;break;
+        case PointerUpdateKind::MiddleButtonPressed:case PointerUpdateKind::MiddleButtonReleased:button=MK_MBUTTON;kind=pressed?WM_MBUTTONDOWN:WM_MBUTTONUP;break;
+        case PointerUpdateKind::XButton1Pressed:case PointerUpdateKind::XButton1Released:button=MK_XBUTTON1;kind=pressed?WM_XBUTTONDOWN:WM_XBUTTONUP;data=XBUTTON1;break;
+        case PointerUpdateKind::XButton2Pressed:case PointerUpdateKind::XButton2Released:button=MK_XBUTTON2;kind=pressed?WM_XBUTTONDOWN:WM_XBUTTONUP;data=XBUTTON2;break;
+        default:return;
+        }
+        if(pressed){
+            WebSlot().CapturePointer(args.Pointer());browser_->Focus();
+            const auto now=GetTickCount64();
+            if(lastBrowserButton_==button&&now-lastBrowserClick_<=GetDoubleClickTime()&&std::abs(pixels.x-lastBrowserPoint_.x)<=GetSystemMetrics(SM_CXDOUBLECLK)/2&&std::abs(pixels.y-lastBrowserPoint_.y)<=GetSystemMetrics(SM_CYDOUBLECLK)/2){kind+=2;lastBrowserButton_=0;}else{lastBrowserButton_=button;lastBrowserClick_=now;}
+        }
+    }else if(kind==WM_MOUSEWHEEL){
+        if(!properties.IsHorizontalMouseWheel()&&input_->TryHandleWheel(properties.MouseWheelDelta(),miniwindow::CurrentKeyModifiers())){args.Handled(true);return;}
+        kind=properties.IsHorizontalMouseWheel()?WM_MOUSEHWHEEL:WM_MOUSEWHEEL;data=static_cast<UINT>(properties.MouseWheelDelta());
+    }else if(kind==WM_MOUSELEAVE&&browserButtons_)return;
+    if(browser_->SendMouseInput(kind,keys,data,pixels)){
+        args.Handled(true);browserPointer_=pixels;browserButtons_=keys&(MK_LBUTTON|MK_RBUTTON|MK_MBUTTON|MK_XBUTTON1|MK_XBUTTON2);
+        if(pressed)lastBrowserPoint_=pixels;
+    }
+    if(released&&!browserButtons_)WebSlot().ReleasePointerCapture(args.Pointer());
 }
 
 void MainWindow::RefreshOwnedFocus(){if(input_)input_->RefreshRuntime();}

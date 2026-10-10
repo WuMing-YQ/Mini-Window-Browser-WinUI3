@@ -22,6 +22,10 @@ struct MainWindow : MainWindowT<MainWindow> {
     void HideClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&);
 private:
     static LRESULT CALLBACK WindowProcedure(HWND,UINT,WPARAM,LPARAM,UINT_PTR,DWORD_PTR);
+    void InitializeBrowserInput();
+    void ForwardBrowserPointer(UINT,Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const&);
+    UINT browserButtons_=0,lastBrowserButton_=0;
+    ULONGLONG lastBrowserClick_=0;POINT lastBrowserPoint_{},browserPointer_{};
     void InitializeChrome();void RenderSnapshot(const miniwindow::AppSnapshot&);void UpdateChromeLayout();
     void OpenManagement(miniwindow::ManagementPage);void OpenImmersionPanel();
     void ShowBookmarks(Microsoft::UI::Xaml::FrameworkElement const&);

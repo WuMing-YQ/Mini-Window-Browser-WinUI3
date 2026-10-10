@@ -24,6 +24,7 @@ public:
     void SetNavigationHandlers(std::function<void()> cancelGesture,std::function<void(std::wstring)> newTab,std::function<void()> closeTab);
     void SetFocusHandler(std::function<void(bool)>);
     void Focus();
+    bool SendMouseInput(UINT message,UINT keys,UINT data,POINT point);
     void GoBack();
     bool CanGoBack() const;
     void RefreshOrStop();
