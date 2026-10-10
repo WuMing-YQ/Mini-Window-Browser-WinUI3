@@ -10,7 +10,7 @@
 
 - [原项目主页与源码](https://github.com/azurplain/Mini-Window-Browser)
 - [原项目发行页面](https://github.com/azurplain/Mini-Window-Browser/releases)（这里下载的是原项目版本）
-- [保留的原版 README](README-upstream.md)
+- [原项目最新说明](https://github.com/azurplain/Mini-Window-Browser#readme)（直接查看上游，不保留可能过时的本地副本）
 - [当前版使用说明与验证范围](docs/validation/winui-redesign.md)
 
 当前衍生版尚未在本文指定独立公开仓库或下载页面，请使用随本说明提供的便携包及对应源码包。

@@ -56,7 +56,7 @@ WebView2 Evergreen Runtime is a separately installed prerequisite; it is not bun
 No Flutter, Dart or .NET application runtime is used.
 '@ | Set-Content (Join-Path $licenseDirectory 'THIRD-PARTY-NOTICES.txt') -Encoding UTF8
  Copy-Item (Join-Path $SourceDirectory 'docs/validation/winui-redesign.md') (Join-Path $package '使用说明.md')
- foreach($readme in @('README.md','README-upstream.md')){Copy-Item (Join-Path $SourceDirectory $readme) (Join-Path $package $readme)}
+ Copy-Item (Join-Path $SourceDirectory 'README.md') (Join-Path $package 'README.md')
  Copy-Item (Join-Path $SourceDirectory 'LICENSE.txt') (Join-Path $package 'LICENSE.txt')
  $guideDirectory=Join-Path $package 'docs/validation'
  New-Item -ItemType Directory -Force $guideDirectory | Out-Null
