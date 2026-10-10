@@ -48,11 +48,15 @@
 
 ## 便携运行
 
-1. 完整解压 `MiniWindow-WinUI3-x64-Portable.zip` 到可写目录。
+提供两种包：`MiniWindow-WinUI3-x64-Lite.zip` 是精简版，不附带 WinUI 运行库；`MiniWindow-WinUI3-x64-Portable.zip` 是保留运行库的完整便携版。
+
+**精简版首次使用前，需安装 Windows App Runtime 1.8.12（x64），或更新的 1.8 修订版。** 从[微软官方下载页](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads-archive#windows-app-sdk-18)选择 1.8.12 的 **Installer (x64)**；安装 2.x 不能替代本程序要求的 1.8。通常每台电脑、每个使用账户只需安装一次，后续更新程序无需重复携带运行库。只装 WebView2 不够；缺少匹配运行库时精简版无法启动。
+
+1. 完整解压所选 ZIP 到可写目录。
 2. 双击文件夹内的 `MiniWindow.exe`。保留旁边的 `app/` 和 `docs/` 文件夹，不能只复制 EXE。
 3. 本版沿用原项目的管理员权限启动策略，会显示 UAC 提示。
 
-构建目标为 Windows 10 2004 或更新版本、x64。需要已安装的 Microsoft Edge WebView2 Runtime；界面仅支持简体中文。便携包带有 WinUI 必需的 Windows App SDK 组件和原生 VC 运行库，不包含 AI／机器学习／Widgets 组件，也不包含 WebView2 浏览器内核。缺少 WebView2 时程序会报告错误，不自动下载安装。
+构建目标为 Windows 10 2004 或更新版本、x64。需要已安装的 Microsoft Edge WebView2 Runtime；界面仅支持简体中文。完整便携包带有 WinUI 必需的 Windows App SDK 组件；精简版改用已安装的共享运行库。两者均携带原生 VC 运行库，不包含 AI／机器学习／Widgets 组件，也不包含 WebView2 浏览器内核。缺少 WebView2 时程序会报告错误，不自动下载安装。
 
 程序配置保存在 `app/config.winui.ini`，网页资料保存在 `app/data/webview-profile`。升级前先退出旧版本、备份配置及网页资料；不要把自己的资料打进公开分发包。旧版配置迁移方式见[使用说明](docs/validation/winui-redesign.md)。
 
@@ -62,10 +66,11 @@
 
 ```powershell
 # 仅编译，不启动应用或测试
-./tools/windows/build_winui.ps1 -BuildOnly
+./tools/windows/build_winui.ps1 -BuildOnly -SharedRuntime
+# 完整便携版省略 -SharedRuntime
 ```
 
-便携打包使用 `tools/windows/package_winui.ps1`；该脚本需要源码同步阶段生成的 `source-manifest.json`，具体流程见[构建说明](docs/validation/winui-redesign.md#从源码构建)。
+精简版打包使用 `tools/windows/package_winui.ps1 -SharedRuntime`，完整便携版省略 `-SharedRuntime`；该脚本需要源码同步阶段生成的 `source-manifest.json`，具体流程见[构建说明](docs/validation/winui-redesign.md#从源码构建)。
 
 当前交付执行了代码审查、Release 编译和文件完整性校验。按维护者要求，后期修改没有运行自动测试、截图或桌面自动操作，实际使用验证由维护者进行。早期测试记录不等于当前包已全面通过测试；游戏独占全屏、不同 DPI 和多显示器等场景不能据此宣称兼容。
 

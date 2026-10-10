@@ -10,7 +10,11 @@
 
 ## 启动
 
-完整解压文件夹，双击根目录 `MiniWindow.exe` 并确认管理员权限提示。根目录只放启动入口、README、`app/` 和 `docs/`；DLL、语言资源与程序本体集中在 `app/`，使用说明和许可证放在 `docs/`。请保留完整目录结构。需要 Windows 10 2004 或更新版本、x64，以及已安装的 WebView2 Runtime。界面仅支持简体中文，随包只保留 `zh-CN` 的 WinUI MUI 语言资源。本包自带 WinUI 必需的 Windows App SDK 组件与原生 VC 运行库，不包含 AI／机器学习／Widgets 组件或 WebView2 浏览器内核，不需要安装 Flutter、Dart 或 .NET 应用运行时。缺少 WebView2 时会显示错误，不自动下载。
+完整解压文件夹，双击根目录 `MiniWindow.exe` 并确认管理员权限提示。根目录只放启动入口、README、`app/` 和 `docs/`；DLL、语言资源与程序本体集中在 `app/`，使用说明和许可证放在 `docs/`。请保留完整目录结构。需要 Windows 10 2004 或更新版本、x64，以及已安装的 WebView2 Runtime。界面仅支持简体中文。两种包均带原生 VC 运行库，不包含 WebView2 浏览器内核，不需要安装 Flutter、Dart 或 .NET 应用运行时。缺少 WebView2 时会显示错误，不自动下载。
+
+- **精简版 `MiniWindow-WinUI3-x64-Lite.zip`**：不包含 WinUI 运行库。使用前安装 Windows App Runtime 1.8.12 x64 或更新的 1.8 修订版：[微软下载页](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads-archive#windows-app-sdk-18)，选择 **Installer (x64)**。2.x 不能替代 1.8；需要为实际运行程序的账户安装。包内少量 Bootstrap 引导文件负责加载共享运行库，不是完整运行库，也不自动安装运行库。
+- **完整便携版 `MiniWindow-WinUI3-x64-Portable.zip`**：自带 WinUI 必需组件，仅保留 `zh-CN` 的独立 MUI 语言资源，不包含 AI／机器学习／Widgets 组件。
+
 
 便携包目录与旧版本分开，不覆盖旧 EXE 或浏览器资料。默认新建独立网页数据。配置与网页资料保存在 `app/` 内。升级前先退出旧程序，将旧版的 `config.winui.ini`（或旧 `config.ini`）及 `data/`、`XiaoChuang.exe.WebView2/` 等实际使用的网页资料目录复制到新版 `app/` 内；旧版若已有 `app/`，从该目录复制。原文件保持不动。首次读取会备份旧配置并生成 `config.winui.ini`；损坏／不可写时显示错误，不报告保存成功。网页资料被旧程序占用时可选择独立测试资料。
 
@@ -50,7 +54,7 @@
 
 ## 从源码构建
 
-VS2026：使用C++的桌面开发、C++ WinUI应用开发工具、MSVC v145、Windows SDK10.0.26100.0。执行 `tools/windows/build_winui.ps1` 默认构建并运行核心测试；`-BuildOnly` 仅编译。`tools/windows/package_winui.ps1 -SourceDirectory <stage> -OutputRoot <artifacts> -UserAcceptanceOnly` 生成待用户验收的正式权限包，不运行测试。包内 `docs/manifest.json` 记录依赖版本、源码摘要、文件SHA256与待验收状态。
+VS2026：使用C++的桌面开发、C++ WinUI应用开发工具、MSVC v145、Windows SDK10.0.26100.0。执行 `tools/windows/build_winui.ps1` 默认构建并运行核心测试；`-BuildOnly` 仅编译。`tools/windows/package_winui.ps1 -SourceDirectory <stage> -OutputRoot <artifacts> -UserAcceptanceOnly` 生成待用户验收的完整便携包，不运行测试。为构建脚本或打包脚本增加 `-SharedRuntime` 可生成不携带 WinUI 运行库的精简版；两种模式必须使用各自独立的构建输出目录。包内 `docs/manifest.json` 记录依赖版本、源码摘要、文件SHA256与待验收状态。
 
 源码同步工具 `tools/sync_windows.py` 只写入 `D:/Projects/Mini-Window-Browser` 下新的sources目录，排除配置、浏览器资料、构建输出和凭据；不执行其他项目脚本，不修改远程仓库。SSH使用已有密钥／agent，或通过环境变量SSHPASS传入密码。
 

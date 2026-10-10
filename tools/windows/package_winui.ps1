@@ -1,5 +1,5 @@
 ﻿[CmdletBinding()]
-param([string]$SourceDirectory=(Join-Path $PSScriptRoot '..\..'),[string]$OutputRoot,[switch]$UserAcceptanceOnly,[string]$ExistingBuildDirectory)
+param([string]$SourceDirectory=(Join-Path $PSScriptRoot '..\..'),[string]$OutputRoot,[switch]$UserAcceptanceOnly,[string]$ExistingBuildDirectory,[switch]$SharedRuntime)
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
@@ -13,7 +13,7 @@ $zip=$package+'.zip'
 if(Test-Path $package){throw 'Package destination already exists.'}
 if($ExistingBuildDirectory -and -not $UserAcceptanceOnly){throw 'Existing build reuse is only allowed for untested user acceptance packages.'}
 if($ExistingBuildDirectory){$build=[IO.Path]::GetFullPath($ExistingBuildDirectory)}else{
- & (Join-Path $SourceDirectory 'tools/windows/build_winui.ps1') -OutputRoot $build -Configuration Release -BuildOnly:$UserAcceptanceOnly
+ & (Join-Path $SourceDirectory 'tools/windows/build_winui.ps1') -OutputRoot $build -Configuration Release -BuildOnly:$UserAcceptanceOnly -SharedRuntime:$SharedRuntime
  if($LASTEXITCODE){throw 'Build failed; package not created.'}
 }
 $environment=& (Join-Path $SourceDirectory 'tools/windows/doctor_winui.ps1')
@@ -25,7 +25,9 @@ $launcherExe=Join-Path $launcherOutput 'MiniWindow.exe'
 if(-not(Test-Path $launcherExe)){throw 'Portable launcher EXE missing.'}
 $payload=Join-Path $package 'app'
 $documentation=Join-Path $package 'docs'
-foreach($required in @('MiniWindow.exe','Microsoft.UI.Xaml.dll','Microsoft.WindowsAppRuntime.dll','MiniWindow.pri')){if(-not(Test-Path (Join-Path $app $required))){throw ('Missing application dependency: '+$required)}}
+$requiredFiles=@('MiniWindow.exe','MiniWindow.pri')
+if($SharedRuntime){$requiredFiles+='Microsoft.WindowsAppRuntime.Bootstrap.dll'}else{$requiredFiles+=@('Microsoft.UI.Xaml.dll','Microsoft.WindowsAppRuntime.dll')}
+foreach($required in $requiredFiles){if(-not(Test-Path (Join-Path $app $required))){throw ('Missing application dependency: '+$required)}}
 New-Item -ItemType Directory -Path $package | Out-Null
 try{
  New-Item -ItemType Directory -Path $payload,$documentation | Out-Null
@@ -40,9 +42,10 @@ try{
   Remove-Item -LiteralPath $mui.FullName
   if(-not(Get-ChildItem -LiteralPath $culture.FullName -Force)){Remove-Item -LiteralPath $culture.FullName}
  }
- foreach($name in @('Microsoft.ui.xaml.dll.mui','Microsoft.UI.Xaml.Phone.dll.mui')){
+ if(-not $SharedRuntime){foreach($name in @('Microsoft.ui.xaml.dll.mui','Microsoft.UI.Xaml.Phone.dll.mui')){
   if(-not(Test-Path (Join-Path $payload ('zh-CN/'+$name)))){throw ('Missing Simplified Chinese resource: '+$name)}
- }
+ }}
+ if($SharedRuntime -and ((Test-Path (Join-Path $payload 'Microsoft.UI.Xaml.dll')) -or (Test-Path (Join-Path $payload 'Microsoft.WindowsAppRuntime.dll')))){throw 'Shared-runtime package contains a local WinUI runtime; use a clean framework-dependent build.'}
  # Fail instead of silently shipping a stale build with unused SDK components.
  $unexpected=@(Get-ChildItem $payload -Recurse -File | Where-Object {$_.Name -match '^(onnxruntime|DirectML|Microsoft\.Windows\.(AI|Widgets|Workloads)|msedgewebview2\.exe|msedge\.exe)'})
  if($unexpected.Count){throw ('Unexpected package component: '+($unexpected.Name -join ', '))}
@@ -63,6 +66,7 @@ try{
  $dependencies=@()
  $noticeGroups=[ordered]@{}
  foreach($dependency in $packages.packages.package){
+  if($dependency.id -eq 'Microsoft.WindowsAppSDK.Runtime' -and -not $SharedRuntime){continue}
   $dependencies+=@{name=$dependency.id;version=$dependency.version}
   $directory=Join-Path $SourceDirectory ('winui/packages/'+$dependency.id+'.'+$dependency.version)
   $notices=@(Get-ChildItem $directory -File -Recurse | Where-Object {$_.Name -match '^(LICENSE|NOTICE|ThirdPartyNotices|EULA)([._-]|$)'})
@@ -98,6 +102,7 @@ No Flutter, Dart or .NET application runtime is used.
  Copy-Item (Join-Path $SourceDirectory 'docs/validation/winui-redesign.md') (Join-Path $documentation '使用说明.md')
  $readme=Get-Content (Join-Path $SourceDirectory 'README.md') -Raw -Encoding UTF8
  $readme=$readme.Replace('src="assets/MiniWindow.png"','src="docs/assets/MiniWindow.png"').Replace('](LICENSE.txt)','](docs/LICENSE.txt)').Replace('docs/validation/winui-redesign.md','docs/使用说明.md')
+ if($SharedRuntime){$readme="# 精简版：需要先安装 Windows App Runtime 1.8.12（x64）`n`n本包不附带 WinUI 运行库。安装说明见下文；仅安装 WebView2 还不够。`n`n"+$readme}
  [IO.File]::WriteAllText((Join-Path $package 'README.md'),$readme,[Text.UTF8Encoding]::new($false))
  $readmeAssets=Join-Path $documentation 'assets'
  New-Item -ItemType Directory -Force $readmeAssets | Out-Null
@@ -119,7 +124,7 @@ No Flutter, Dart or .NET application runtime is used.
  $rootEntries=@(Get-ChildItem $package | ForEach-Object {$_.Name} | Sort-Object)
  if(($rootEntries -join '|') -ne 'app|docs|MiniWindow.exe|README.md'){throw 'Unexpected files at portable package root.'}
  $files=@(Get-ChildItem $package -File -Recurse | Sort-Object FullName | ForEach-Object {@{path=$_.FullName.Substring($package.Length+1).Replace('\','/');sha256=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant();bytes=$_.Length}})
- $manifest=[ordered]@{version='2.0.0-winui-preview';configuration='Release';platform='x64';elevation='requireAdministrator';selfContained=$true;uiLanguage='zh-CN';entryPoint='MiniWindow.exe';application='app/MiniWindow.exe';sourceSha256=$source.sha256;createdUtc=[DateTime]::UtcNow.ToString('o');dependencies=$dependencies;webView2Runtime=$environment.WebView2;nativeCrt=$redist.Name;automatedTests=if($UserAcceptanceOnly){'not run at user request'}else{'passed'};manualAcceptance='pending user';gameCompatibility='not run';files=$files}
+ $manifest=[ordered]@{version='2.0.0-winui-preview';configuration='Release';platform='x64';elevation='requireAdministrator';selfContained=(-not $SharedRuntime.IsPresent);windowsAppRuntimePrerequisite=if($SharedRuntime){'Windows App Runtime 1.8.12 x64 (or later 1.8 servicing release)'}else{$null};uiLanguage='zh-CN';entryPoint='MiniWindow.exe';application='app/MiniWindow.exe';sourceSha256=$source.sha256;createdUtc=[DateTime]::UtcNow.ToString('o');dependencies=$dependencies;webView2Runtime=$environment.WebView2;nativeCrt=$redist.Name;automatedTests=if($UserAcceptanceOnly){'not run at user request'}else{'passed'};manualAcceptance='pending user';gameCompatibility='not run';files=$files}
  $manifest|ConvertTo-Json -Depth 8|Set-Content (Join-Path $documentation 'manifest.json') -Encoding UTF8
  foreach($entry in $files){if((Get-FileHash (Join-Path $package $entry.path) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.sha256){throw ('Package file changed: '+$entry.path)}}
  Compress-Archive -Path $package -DestinationPath $zip -CompressionLevel Optimal

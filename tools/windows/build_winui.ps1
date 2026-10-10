@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([ValidateSet('Debug','Release')][string]$Configuration='Release',[ValidateSet('x64')][string]$Platform='x64',[switch]$TestsOnly,[string]$OutputRoot,[switch]$SmokeTestAsInvoker,[switch]$BuildOnly)
+param([ValidateSet('Debug','Release')][string]$Configuration='Release',[ValidateSet('x64')][string]$Platform='x64',[switch]$TestsOnly,[string]$OutputRoot,[switch]$SmokeTestAsInvoker,[switch]$BuildOnly,[switch]$SharedRuntime)
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
@@ -10,7 +10,7 @@ $OutputRoot=[IO.Path]::GetFullPath($OutputRoot)
 New-Item -ItemType Directory -Force $OutputRoot | Out-Null
 function Build([string]$label,[string]$project,[string]$target,[string]$out,[string[]]$extra=@()) {
  $log=Join-Path $OutputRoot ($label+'.log')
- $arguments=@($project,"/t:$target",'/nologo','/v:minimal',"/p:Configuration=$Configuration","/p:Platform=$Platform","/p:OutDir=$OutputRoot\$out\","/p:IntDir=$OutputRoot\obj-$out\")+$extra
+ $arguments=@($project,"/t:$target",'/nologo','/v:minimal',"/p:Configuration=$Configuration","/p:Platform=$Platform","/p:WindowsAppSDKSelfContained=$((-not $SharedRuntime).ToString().ToLowerInvariant())","/p:OutDir=$OutputRoot\$out\","/p:IntDir=$OutputRoot\obj-$out\")+$extra
  & $environment.MSBuild @arguments *> $log
  $code=$LASTEXITCODE
  Get-Content $log -Encoding UTF8 -Tail 18
