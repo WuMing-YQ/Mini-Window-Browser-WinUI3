@@ -17,7 +17,8 @@
 - [原项目最新说明](https://github.com/azurplain/Mini-Window-Browser#readme)（直接查看上游，不保留可能过时的本地副本）
 - [当前版使用说明与验证范围](docs/usage.md)
 
-当前衍生版尚未在本文指定独立公开仓库或下载页面，请使用随本说明提供的便携包及对应源码包。
+- [当前衍生版仓库](https://github.com/WuMing-YQ/Mini-Window-Browser-WinUI3)
+- [当前衍生版下载与更新说明](https://github.com/WuMing-YQ/Mini-Window-Browser-WinUI3/releases)
 
 ## 致谢
 
@@ -48,7 +49,7 @@
 
 ## 便携运行
 
-提供两种包：`MiniWindow-WinUI3-x64-Lite.zip` 是精简版，不附带 WinUI 运行库；`MiniWindow-WinUI3-x64-Portable.zip` 是保留运行库的完整便携版。
+当前 Release 提供 `MiniWindow-WinUI3-x64-Lite.zip` 精简便携包，不附带 WinUI 运行库。对应构建源码为 `MiniWindow-WinUI3-Lite-Source.zip`，文件校验值见 `MiniWindow-Lite-SHA256.txt`。构建脚本仍支持自行生成携带运行库的完整便携包。
 
 **精简版首次使用前，需安装 Windows App Runtime 1.8.12（x64），或更新的 1.8 修订版。** 从[微软官方下载页](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads-archive#windows-app-sdk-18)选择 1.8.12 的 **Installer (x64)**；安装 2.x 不能替代本程序要求的 1.8。通常每台电脑、每个使用账户只需安装一次，后续更新程序无需重复携带运行库。只装 WebView2 不够；缺少匹配运行库时精简版无法启动。
 
