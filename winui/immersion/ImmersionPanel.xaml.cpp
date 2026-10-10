@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "../window/AppIcon.h"
 #include "ImmersionPanel.xaml.h"
 #include "ImmersionPanel.g.cpp"
 #include "ImmersionPolicy.h"
@@ -15,6 +16,8 @@ std::wstring Percent(double value){std::wostringstream text;text<<std::fixed<<st
 }
 ImmersionPanel::ImmersionPanel(){
  InitializeComponent();check_hresult(try_as<IWindowNative>()->get_WindowHandle(&hwnd_));
+    miniwindow::ApplyApplicationIcon(AppWindow());
+
  auto presenter=AppWindow().Presenter().as<Microsoft::UI::Windowing::OverlappedPresenter>();presenter.IsAlwaysOnTop(true);presenter.IsMaximizable(false);presenter.IsMinimizable(false);
  const auto dpi=GetDpiForWindow(hwnd_);MONITORINFO monitor{sizeof(monitor)};GetMonitorInfoW(MonitorFromWindow(hwnd_,MONITOR_DEFAULTTONEAREST),&monitor);AppWindow().Resize({std::min(MulDiv(420,dpi,96),static_cast<int>(monitor.rcWork.right-monitor.rcWork.left)-24),std::min(MulDiv(680,dpi,96),static_cast<int>(monitor.rcWork.bottom-monitor.rcWork.top)-24)});
  AppWindow().Closing([this](auto&&,Microsoft::UI::Windowing::AppWindowClosingEventArgs const& args){if(!shuttingDown_){args.Cancel(true);ClosePanel();}});

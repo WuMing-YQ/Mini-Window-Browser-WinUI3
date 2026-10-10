@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "window/AppIcon.h"
 #include "MainWindow.xaml.h"
 #include "MainWindow.g.cpp"
 #include "core/SessionController.h"
@@ -23,6 +24,8 @@ namespace winrt::MiniWindow::implementation {
 MainWindow::MainWindow() {
     InitializeComponent();
     winrt::check_hresult(this->try_as<IWindowNative>()->get_WindowHandle(&hwnd_));
+    miniwindow::ApplyApplicationIcon(AppWindow());
+
     wchar_t executable[32768]{};GetModuleFileNameW(nullptr,executable,32768);
     directory_=std::filesystem::path(executable).parent_path();
     settings_=std::make_unique<miniwindow::VersionedConfigStore>(directory_/L"config.winui.ini",directory_/L"config.ini");

@@ -1,9 +1,10 @@
 #include "TrayController.h"
+#include "AppIcon.h"
 #pragma comment(lib,"shell32.lib")
 namespace miniwindow {
 TrayController::TrayController(HWND hwnd,std::function<void(TrayAction)> action):hwnd_(hwnd),action_(std::move(action)) {
     icon_.cbSize=sizeof(icon_);icon_.hWnd=hwnd_;icon_.uID=1;icon_.uFlags=NIF_MESSAGE|NIF_ICON|NIF_TIP;
-    icon_.uCallbackMessage=kTrayMessage;icon_.hIcon=LoadIconW(nullptr,IDI_APPLICATION);wcscpy_s(icon_.szTip,L"小窗浏览器 · 双击恢复普通窗口");
+    icon_.uCallbackMessage=kTrayMessage;icon_.hIcon=ApplicationIcon();wcscpy_s(icon_.szTip,L"小窗浏览器 · 双击恢复普通窗口");
     taskbarCreated_=RegisterWindowMessageW(L"TaskbarCreated");
 }
 TrayController::~TrayController(){if(present_)Shell_NotifyIconW(NIM_DELETE,&icon_);}

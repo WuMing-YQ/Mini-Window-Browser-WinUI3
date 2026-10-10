@@ -1,0 +1,3 @@
+#include "AppResources.h"
+
+IDI_MINIWINDOW ICON "../assets/MiniWindow.ico"
