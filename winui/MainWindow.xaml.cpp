@@ -43,7 +43,21 @@ MainWindow::MainWindow() {
         auto result=action==miniwindow::TrayAction::Show?self->windowService_->SetHidden(false):self->windowService_->RestoreNormal();
         self->SyncWindowState();if(!result.ok)self->ShowError(result.message);
     }});
-    windowService_=std::make_unique<miniwindow::WindowService>(hwnd_,state_.settings,[weak=get_weak()](bool visible){if(auto self=weak.get())self->Chrome().Visibility(visible?Microsoft::UI::Xaml::Visibility::Visible:Microsoft::UI::Xaml::Visibility::Collapsed);},[weak=get_weak()]{if(auto self=weak.get())self->LayoutBrowser();});
+    windowService_=std::make_unique<miniwindow::WindowService>(hwnd_,state_.settings,[weak=get_weak()](bool visible){if(auto self=weak.get()){
+        using Microsoft::UI::Xaml::Visibility;
+        self->Chrome().Visibility(visible?Visibility::Visible:Visibility::Collapsed);
+        self->ErrorPanel().Visibility(visible&&!self->ErrorText().Text().empty()?Visibility::Visible:Visibility::Collapsed);
+    }},[weak=get_weak()]{if(auto self=weak.get()){
+        self->UpdateChromeLayout();self->Root().UpdateLayout();self->LayoutBrowser(true);
+    }});
+    windowService_->SetContentRectProvider([weak=get_weak()]()->RECT{
+        if(auto self=weak.get();self&&!self->closed_){
+            self->UpdateChromeLayout();self->Root().UpdateLayout();
+            auto rect=self->BrowserBounds();POINT origin{};
+            if(ClientToScreen(self->hwnd_,&origin)){OffsetRect(&rect,origin.x,origin.y);return rect;}
+        }
+        return {};
+    });
     windowService_->SetFrameHandler([weak=get_weak()](auto mode){if(auto self=weak.get())self->ApplyFrame(mode);});
     windowService_->SetThemeHandler([weak=get_weak()](auto mode){if(auto self=weak.get()){miniwindow::ThemeSync::Apply(self->hwnd_,mode,self->Root(),self->AppWindow());if(self->management_)self->management_->RefreshTheme();if(self->immersionPanel_)self->immersionPanel_->RefreshTheme();}});
     windowService_->SetRecoveryHandler([weak=get_weak()](bool immersive,bool hidden,bool minimize){if(auto self=weak.get()){self->tray_->Sync(immersive,hidden,minimize);return !miniwindow::NeedsTray(immersive,hidden,minimize)||self->tray_->Available();}return false;});
@@ -72,7 +86,7 @@ MainWindow::MainWindow() {
     Closed([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get()){self->closed_=true;if(self->management_)self->management_->Shutdown();if(self->immersionPanel_)self->immersionPanel_->Shutdown();if(self->coordinator_)self->coordinator_->Subscribe({});self->browserPort_.host=nullptr;if(self->input_)self->input_->Stop();self->systemTheme_.ColorValuesChanged(self->themeToken_);RemoveWindowSubclass(self->hwnd_,WindowProcedure,1);self->windowService_.reset();self->tray_.reset();if(self->browser_)self->browser_->Close();if(self->initialization_)self->initialization_.Cancel();self->browser_.reset();if(self->profileLock_){CloseHandle(self->profileLock_);self->profileLock_=nullptr;}}});
 }
 void MainWindow::SetDialogActive(bool active){dialogDepth_=std::max(0,dialogDepth_+(active?1:-1));if(browser_)browser_->SetOccluded(dialogDepth_>0);}
-void MainWindow::ShowError(const std::wstring& error) {const auto message=configError_+(configError_.empty()?L"":L"\n")+inputError_+error;ErrorText().Text(message);ErrorPanel().Visibility(message.empty()?Microsoft::UI::Xaml::Visibility::Collapsed:Microsoft::UI::Xaml::Visibility::Visible);}
+void MainWindow::ShowError(const std::wstring& error) {const auto message=configError_+(configError_.empty()?L"":L"\n")+inputError_+error;ErrorText().Text(message);ErrorPanel().Visibility(message.empty()||(windowService_&&windowService_->Immersive())?Microsoft::UI::Xaml::Visibility::Collapsed:Microsoft::UI::Xaml::Visibility::Visible);}
 bool MainWindow::AcquireProfile(const std::filesystem::path& path) {
     auto identity=std::filesystem::absolute(path).wstring();for(auto& c:identity)c=static_cast<wchar_t>(towlower(c));
     const auto name=L"Local\\MiniWindow.Profile."+std::to_wstring(std::hash<std::wstring>{}(identity));
@@ -123,12 +137,16 @@ Windows::Foundation::IAsyncAction MainWindow::ConfirmCloseAsync(std::wstring err
         if(!closed_&&result==Microsoft::UI::Xaml::Controls::ContentDialogResult::None){closeApproved_=true;Close();}
     }catch(const winrt::hresult_error&){closePending_=false;}
 }
-void MainWindow::LayoutBrowser() {
-    if(!browser_||closed_)return;
+RECT MainWindow::BrowserBounds() {
     const auto point=WebSlot().TransformToVisual(Root()).TransformPoint({0,0});
     const double scale=GetDpiForWindow(hwnd_)/96.0;
-    RECT bounds{static_cast<LONG>(std::round(point.X*scale)),static_cast<LONG>(std::round(point.Y*scale)),static_cast<LONG>(std::round((point.X+WebSlot().ActualWidth())*scale)),static_cast<LONG>(std::round((point.Y+WebSlot().ActualHeight())*scale))};
-    browser_->SetBounds(bounds);browser_->NotifyParentMoved();if(windowService_&&windowService_->Mode()==miniwindow::WindowMode::Normal)windowService_->SetChromeHeight(static_cast<int>(std::round(point.Y*scale))+GetSystemMetricsForDpi(SM_CYCAPTION,GetDpiForWindow(hwnd_))+2*GetSystemMetricsForDpi(SM_CYFRAME,GetDpiForWindow(hwnd_)));
+    return {static_cast<LONG>(std::round(point.X*scale)),static_cast<LONG>(std::round(point.Y*scale)),static_cast<LONG>(std::round((point.X+WebSlot().ActualWidth())*scale)),static_cast<LONG>(std::round((point.Y+WebSlot().ActualHeight())*scale))};
+}
+void MainWindow::LayoutBrowser(bool finishTransition) {
+    // Presenter/style/visibility changes emit intermediate size events. Only
+    // commit the final layout to WebView, keeping its viewport stable throughout.
+    if(!browser_||closed_||(windowService_&&windowService_->ApplyingMode()&&!finishTransition))return;
+    browser_->SetBounds(BrowserBounds());browser_->NotifyParentMoved();
 }
 void MainWindow::AddressKeyDown(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& args) {if(args.Key()==Windows::System::VirtualKey::Enter){NavigateClick(nullptr,nullptr);args.Handled(true);}}
 void MainWindow::NavigateClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&) {
@@ -146,7 +164,7 @@ void MainWindow::ApplyFrame(miniwindow::WindowMode mode) {
 }
 void MainWindow::SyncWindowState(){if(!windowService_)return;if(input_)input_->CancelGesture();state_.windowHidden=windowService_->Hidden();state_.immersionActive=windowService_->Immersive();state_.windowMode=windowService_->VisibleMode();if(browser_)browser_->SetVisible(!state_.windowHidden);if(input_){input_->RefreshRuntime();input_->SetImmersiveWebFullscreen(webFullscreen_&&state_.immersionActive);}if(coordinator_)coordinator_->OnWindowState(state_.windowMode,state_.windowHidden,state_.immersionActive);UpdateChromeLayout();LayoutBrowser();}
 void MainWindow::MaximizeClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&){auto result=windowService_->SetMode(windowService_->Mode()==miniwindow::WindowMode::Maximized?miniwindow::WindowMode::Normal:miniwindow::WindowMode::Maximized);SyncWindowState();if(!result.ok)ShowError(result.message);}
-void MainWindow::ImmersionClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&){auto result=windowService_->Immersive()?windowService_->RestoreNormal():windowService_->SetMode(state_.settings.immersionStyle==miniwindow::ImmersionStyle::Hole?miniwindow::WindowMode::ImmersionHole:miniwindow::WindowMode::ImmersionAutoHide);SyncWindowState();if(!result.ok)ShowError(result.message);}
+void MainWindow::ImmersionClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&){auto result=windowService_->Immersive()?windowService_->SetMode(windowService_->ImmersionReturnMode()):windowService_->SetMode(state_.settings.immersionStyle==miniwindow::ImmersionStyle::Hole?miniwindow::WindowMode::ImmersionHole:miniwindow::WindowMode::ImmersionAutoHide);SyncWindowState();if(!result.ok)ShowError(result.message);}
 void MainWindow::HideClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&){auto result=windowService_->SetHidden(true);SyncWindowState();if(!result.ok)ShowError(result.message);}
 LRESULT CALLBACK MainWindow::WindowProcedure(HWND hwnd,UINT message,WPARAM parameter,LPARAM data,UINT_PTR,DWORD_PTR reference) {
     auto self=reinterpret_cast<MainWindow*>(reference);if(!self||self->closed_)return DefSubclassProc(hwnd,message,parameter,data);
@@ -239,7 +257,7 @@ void MainWindow::UpdateChromeLayout(){
     ActionButtons().HorizontalAlignment(tiny?HorizontalAlignment::Left:HorizontalAlignment::Right);
     const bool tabs=width>=260;
     Tabs().Visibility(tabs?Visibility::Visible:Visibility::Collapsed);TabMenuButton().Visibility(tabs?Visibility::Collapsed:Visibility::Visible);
-    StatusText().Visibility(width>=600&&!state_.immersionActive&&!state_.windowHidden&&Root().ActualHeight()>=240?Visibility::Visible:Visibility::Collapsed);
+    StatusText().Visibility(width>=600&&!(windowService_&&windowService_->Immersive())&&!(windowService_&&windowService_->Hidden())&&Root().ActualHeight()>=240?Visibility::Visible:Visibility::Collapsed);
     StatusText().Text(state_.settings.windowWheelEnabled?L"普通浏览  ·  "+miniwindow::WheelModifierLabel(state_.settings.windowWheelModifiers)+L"+滚轮调整窗口大小":L"普通浏览");
 }
 void MainWindow::FillBookmarkMenu(Windows::Foundation::Collections::IVector<Microsoft::UI::Xaml::Controls::MenuFlyoutItemBase> const& items){

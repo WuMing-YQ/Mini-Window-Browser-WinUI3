@@ -19,6 +19,9 @@ public:
     bool RecoveryAvailable() const {return recoveryForced_||Immersive()||Hidden()||settings_.useSystemTray;}
     void SetCursorExclusion(std::function<bool(POINT)> excluded){controller_.SetCursorExclusion(std::move(excluded));}
     void SetOperations(xiaochuang::WindowOperations operations){controller_.SetOperations(std::move(operations));}
+    void SetContentRectProvider(std::function<RECT()> provider){controller_.SetContentRectProvider(std::move(provider));}
+    bool ApplyingMode() const {return controller_.ApplyingMode();}
+    WindowMode ImmersionReturnMode() const override {return controller_.ImmersionReturnMode();}
     void SetFrameHandler(std::function<void(WindowMode)> handler){controller_.SetFrameHandler(std::move(handler));}
     void SetThemeHandler(std::function<void(xiaochuang::ThemeMode)> handler){themeHandler_=std::move(handler);}
     void SetRecoveryHandler(std::function<bool(bool,bool,bool)> handler){recovery_=std::move(handler);}

@@ -38,6 +38,7 @@ struct IWindowPort {
     virtual OperationResult SetMode(WindowMode)=0;
     virtual OperationResult SetHidden(bool)=0;
     virtual OperationResult RestoreNormal()=0;
+    virtual WindowMode ImmersionReturnMode() const {return WindowMode::Normal;}
     virtual RECT NormalRect() const=0;
     virtual OperationResult ApplyGeometry(RECT,bool){return {false,L"几何操作不可用。"};}
 };

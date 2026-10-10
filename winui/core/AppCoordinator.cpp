@@ -32,7 +32,12 @@ void AppCoordinator::Navigate(std::wstring input) {
 }
 void AppCoordinator::ToggleImmersion() {
     auto& state=state_;
-    if(state.immersionActive) {RestoreNormal();return;}
+    if(state.immersionActive) {
+        const auto target=window_.ImmersionReturnMode();
+        auto result=window_.SetMode(target);
+        if(result.ok){state.windowMode=target;state.immersionActive=false;state.windowHidden=false;state.session.normalRect=window_.NormalRect();state.session.maximized=target==WindowMode::Maximized;browser_.SetVisible(true);}
+        Publish(std::move(result));return;
+    }
     const auto target=state.settings.immersionStyle==ImmersionStyle::Hole?WindowMode::ImmersionHole:WindowMode::ImmersionAutoHide;
     auto result=window_.SetMode(target);
     if(result.ok) {state.windowMode=target;state.immersionActive=true;state.windowHidden=false;browser_.SetVisible(true);}

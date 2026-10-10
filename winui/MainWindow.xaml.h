@@ -37,7 +37,8 @@ private:
     void HandleHotkey(miniwindow::HotkeyAction,miniwindow::HotkeyGesture);
     void RefreshOwnedFocus();
     void StartBrowser();
-    void LayoutBrowser();
+    RECT BrowserBounds();
+    void LayoutBrowser(bool finishTransition=false);
     Windows::Foundation::IAsyncAction InitializeBrowserAsync();
     Windows::Foundation::IAsyncAction ConfirmCloseAsync(std::wstring);
     void SetDialogActive(bool);

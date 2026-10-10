@@ -44,6 +44,7 @@ void WindowModeController::Shutdown() {
     chromeVisibility_ = {};
     layoutCallback_ = {};
     frameHandler_ = {};
+    contentRectProvider_ = {};
 }
 
 WindowMode WindowModeController::Mode() const noexcept {
@@ -80,7 +81,27 @@ void WindowModeController::SetImmersion(bool enabled) {
     }
     if (enabled) {
         returnFromImmersion_ = visibleMode_;
-        GetWindowRect(window_, &preImmersionRect_);
+        // Capture the actual viewport before any titlebar/presenter/layout changes.
+        // Keep the original outer rectangle separately for an exact round trip.
+        const RECT content = contentRectProvider_ ? contentRectProvider_() : RECT{};
+        if (!GetWindowRect(window_, &preImmersionRect_)) return;
+        immersionRect_ = preImmersionRect_;
+        if (content.right > content.left && content.bottom > content.top) {
+            immersionRect_ = content;
+            const RECT visible = ReadWindowFrameInsets(window_).Visible(preImmersionRect_);
+            const RECT screen = CurrentMonitorRect(false);
+            const int tolerance = std::max(1, settings_ ? settings_->snapThreshold : 0);
+            LONG dx = 0, dy = 0;
+            if (std::abs(visible.left - screen.left) <= tolerance)
+                dx = screen.left - content.left;
+            else if (std::abs(visible.right - screen.right) <= tolerance)
+                dx = screen.right - content.right;
+            if (std::abs(visible.top - screen.top) <= tolerance)
+                dy = screen.top - content.top;
+            else if (std::abs(visible.bottom - screen.bottom) <= tolerance)
+                dy = screen.bottom - content.bottom;
+            OffsetRect(&immersionRect_, dx, dy);
+        }
         visibleMode_ = settings_ && settings_->immersionStyle == ImmersionStyle::AutoHide
             ? WindowMode::ImmersionAutoHide : WindowMode::ImmersionHole;
         ApplyVisibleMode(visibleMode_, true);
@@ -358,9 +379,9 @@ void WindowModeController::ApplyVisibleMode(WindowMode mode, bool restoreGeometr
     RECT target{};
     if (!GetWindowRect(window_, &target)) return;
     if (restoreGeometry) {
-        // Preserve the OUTER window bounds: removing chrome gives the webpage
-        // more room, and restoring chrome consumes that room without resizing.
-        target = immersive ? preImmersionRect_ :
+        // Immersion uses the measured viewport, not the previous outer bounds.
+        // Reapplying styles never subtracts chrome from an already-shrunken rect.
+        target = immersive ? immersionRect_ :
             (mode == WindowMode::Maximized ? CurrentMonitorRect(true) : normalRect_);
     }
     KillTimer(window_, kImmersionTimerId);
