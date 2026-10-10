@@ -1,7 +1,6 @@
 #include <unknwn.h>
 #include "BrowserHost.h"
 #include "WebLifecycle.h"
-#include "InputTrace.h"
 #include "../../src/WebViewZoom.h"
 #include "../../src/ConfigStore.h"
 #include <winrt/Microsoft.UI.Dispatching.h>
@@ -45,6 +44,7 @@ struct BrowserHost::State {
     RECT bounds{};
     bool ready=false,loading=false,visible=true,occluded=false,waiting=false,events=false;
     UINT64 navigationId=0;
+    uint64_t fullscreenRequest=0;
     uint64_t generation=0;
     std::wstring pendingUrl;
     std::shared_ptr<Creation> creation;
@@ -139,7 +139,6 @@ winrt::Windows::Foundation::IAsyncAction BrowserHost::InitializeAsync() {
     if(!state->life.IsCurrent(generation)) co_return;
     if(FAILED(creation->result)) {state->Report(BrowserError(creation->result));co_return;}
     state->ready=true;
-    TraceBrowserInput("controller-ready");TraceBrowserWindows(state->parent);
     state->Report();
     if(!state->pendingUrl.empty()) {
         state->waiting=true;
@@ -154,7 +153,7 @@ void BrowserHost::ConfigureEvents(const std::shared_ptr<State>& s,uint64_t gener
     winrt::check_hresult(s->controller->add_GotFocus(Callback<ICoreWebView2FocusChangedEventHandler>([current](ICoreWebView2Controller*,IUnknown*)->HRESULT{if(auto s=current();s&&s->focus)s->focus(true);return S_OK;}).Get(),&s->gotFocus));
     winrt::check_hresult(s->controller->add_LostFocus(Callback<ICoreWebView2FocusChangedEventHandler>([current](ICoreWebView2Controller*,IUnknown*)->HRESULT{if(auto s=current();s&&s->focus)s->focus(false);return S_OK;}).Get(),&s->lostFocus));
     winrt::check_hresult(s->view->add_NavigationStarting(Callback<ICoreWebView2NavigationStartingEventHandler>([current](ICoreWebView2*,ICoreWebView2NavigationStartingEventArgs* args)->HRESULT {
-        if(auto s=current()) {s->loading=true;s->waiting=true;if(args)args->get_NavigationId(&s->navigationId);if(s->cancelGesture)s->cancelGesture();s->Report();}return S_OK;
+        if(auto s=current()) {CancelNativeMouse(*s);++s->fullscreenRequest;if(s->signal)s->signal({PageSignal::Fullscreen,false});s->loading=true;s->waiting=true;if(args)args->get_NavigationId(&s->navigationId);if(s->cancelGesture)s->cancelGesture();s->Report();}return S_OK;
     }).Get(),&s->starting));
     winrt::check_hresult(s->view->add_ContentLoading(Callback<ICoreWebView2ContentLoadingEventHandler>([current](ICoreWebView2*,ICoreWebView2ContentLoadingEventArgs* args)->HRESULT {
         if(auto s=current()) {UINT64 id=0;if(args)args->get_NavigationId(&id);if(id==s->navigationId){s->waiting=false;s->controller->put_IsVisible(s->visible&&!s->occluded);}}return S_OK;
@@ -173,10 +172,10 @@ void BrowserHost::ConfigureEvents(const std::shared_ptr<State>& s,uint64_t gener
     }).Get(),&s->message));
     winrt::check_hresult(s->view->add_ContainsFullScreenElementChanged(Callback<ICoreWebView2ContainsFullScreenElementChangedEventHandler>([current,generation,weak](ICoreWebView2*,IUnknown*)->HRESULT {
         if(auto s=current()) {
-            BOOL full=FALSE;s->view->get_ContainsFullScreenElement(&full);if(s->signal)s->signal({PageSignal::Fullscreen,full!=FALSE});
+            const auto request=++s->fullscreenRequest;BOOL full=FALSE;s->view->get_ContainsFullScreenElement(&full);if(s->signal)s->signal({PageSignal::Fullscreen,full!=FALSE});
             if(full) s->view->ExecuteScript(L"(()=>{let e=document.fullscreenElement;let v=e&&(e.matches('video')?e:e.querySelector('video'));return v&&v.videoHeight?v.videoWidth/v.videoHeight:0})()",
-                Callback<ICoreWebView2ExecuteScriptCompletedHandler>([weak,generation](HRESULT hr,PCWSTR value)->HRESULT {
-                    if(auto s=weak.lock();s&&s->life.IsCurrent(generation)&&SUCCEEDED(hr)&&value&&s->signal) {if(auto signal=ParsePageSignal(L"{\"kind\":\"aspect\",\"aspect\":"+std::wstring(value)+L"}"))s->signal(*signal);}return S_OK;
+                Callback<ICoreWebView2ExecuteScriptCompletedHandler>([weak,generation,request](HRESULT hr,PCWSTR value)->HRESULT {
+                    if(auto s=weak.lock();s&&s->life.IsCurrent(generation)&&request==s->fullscreenRequest&&!s->waiting&&SUCCEEDED(hr)&&value&&s->signal) {BOOL full=FALSE;if(FAILED(s->view->get_ContainsFullScreenElement(&full))||!full)return S_OK;if(auto signal=ParsePageSignal(L"{\"kind\":\"aspect\",\"aspect\":"+std::wstring(value)+L"}"))s->signal(*signal);}return S_OK;
                 }).Get());
         }return S_OK;
     }).Get(),&s->fullscreen));
@@ -185,7 +184,7 @@ void BrowserHost::ConfigureEvents(const std::shared_ptr<State>& s,uint64_t gener
     }).Get(),&s->newWindow));
     winrt::check_hresult(s->view->add_WindowCloseRequested(Callback<ICoreWebView2WindowCloseRequestedEventHandler>([current](ICoreWebView2*,IUnknown*)->HRESULT {if(auto s=current();s&&s->closeTab){auto action=s->closeTab;s->queue.TryEnqueue([current,action]{if(current())action();});}return S_OK;}).Get(),&s->closeWindow));
     winrt::check_hresult(s->view->add_ProcessFailed(Callback<ICoreWebView2ProcessFailedEventHandler>([current](ICoreWebView2*,ICoreWebView2ProcessFailedEventArgs*)->HRESULT {
-        if(auto s=current()) {s->ready=false;s->loading=false;if(s->cancelGesture)s->cancelGesture();s->Report(L"浏览器进程异常。请恢复普通模式后重试。");}return S_OK;
+        if(auto s=current()) {CancelNativeMouse(*s);s->ready=false;s->loading=false;if(s->cancelGesture)s->cancelGesture();s->Report(L"浏览器进程异常。请恢复普通模式后重试。");}return S_OK;
     }).Get(),&s->failed));
     s->events=true;
 }
@@ -194,24 +193,24 @@ OperationResult BrowserHost::Navigate(const std::wstring& url) {
     auto s=state_;s->pendingUrl=url;
     if(!s->ready)return {true,{}};
     if(s->cancelGesture)s->cancelGesture();
-    s->waiting=true;s->navigationId=0;s->controller->put_IsVisible(FALSE);
+    CancelNativeMouse(*s);++s->fullscreenRequest;s->waiting=true;s->navigationId=0;s->controller->put_IsVisible(FALSE);
     const auto result=s->view->Navigate(url.c_str());
     if(FAILED(result)){s->waiting=false;s->controller->put_IsVisible(s->visible&&!s->occluded);return {false,BrowserError(result)};}
     return {};
 }
 void BrowserHost::SetVisible(bool visible) {
-    auto s=state_;s->visible=visible||s->settings.backgroundMediaHotkeys;
+    auto s=state_;if(!visible)CancelNativeMouse(*s);s->visible=visible||s->settings.backgroundMediaHotkeys;
     if(!visible&&s->cancelGesture)s->cancelGesture();
     if(!visible&&s->settings.autoPauseOnHide&&s->view) s->view->ExecuteScript(L"(()=>{const v=document.querySelector('video');if(v&&!v.paused)v.pause()})()",nullptr);
     if(s->controller)s->controller->put_IsVisible(s->visible&&!s->occluded&&!s->waiting);
 }
 void BrowserHost::ExecuteMedia(MediaCommand command,int rate) {if(state_->ready)state_->view->ExecuteScript(xiaochuang::MediaBridge::CommandScript(command,rate).c_str(),nullptr);}
-void BrowserHost::SetOccluded(bool occluded){auto s=state_;s->occluded=occluded;if(s->surface)ShowWindow(s->surface,occluded?SW_HIDE:SW_SHOWNA);if(s->controller)s->controller->put_IsVisible(s->visible&&!occluded&&!s->waiting);}
+void BrowserHost::SetOccluded(bool occluded){auto s=state_;if(occluded)CancelNativeMouse(*s);s->occluded=occluded;if(s->surface)ShowWindow(s->surface,occluded?SW_HIDE:SW_SHOWNA);if(s->controller)s->controller->put_IsVisible(s->visible&&!occluded&&!s->waiting);}
 void BrowserHost::Close() {
-    auto s=state_;if(GetCapture()==s->surface)ReleaseCapture();s->life.Close();
+    auto s=state_;CancelNativeMouse(*s);s->life.Close();
     if(s->cancelGesture)s->cancelGesture();
     s->ready=false;
-    s->status={};s->signal={};s->document={};s->focus={};s->cancelGesture={};s->newTab={};s->closeTab={};
+    s->status={};s->signal={};s->document={};s->focus={};s->cancelGesture={};s->newTab={};s->closeTab={};s->wheel={};
     if(s->creation&&s->creation->result==E_PENDING)s->creation->Finish(E_ABORT);
     s->zoom.Detach();
     if(s->view&&s->events) {
@@ -247,13 +246,21 @@ void BrowserHost::SetFocusHandler(std::function<void(bool)> handler){state_->foc
 void BrowserHost::Focus(){if(state_->controller&&state_->visible&&!state_->occluded)state_->controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);}
 bool BrowserHost::SendMouseInput(UINT message,UINT keys,UINT data,POINT point){return SendMouse(*state_,message,keys,data,point);}
 bool BrowserHost::SendMouse(State& state,UINT message,UINT keys,UINT data,POINT point){
-    auto* s=&state;const int blocked=(!s->composition?1:0)|(!s->ready?2:0)|(!s->visible?4:0)|(s->occluded?8:0)|(s->waiting?16:0);
-    TraceBrowserInput("send-mouse-enter",message,blocked);
-    if(blocked)return false;
+    auto* s=&state;
+    if(!s->composition||!s->ready||!s->visible||s->occluded||s->waiting)return false;
     if(message==WM_MOUSELEAVE){keys=0;data=0;point={};}
     const auto result=s->composition->SendMouseInput(static_cast<COREWEBVIEW2_MOUSE_EVENT_KIND>(message),static_cast<COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS>(keys),data,point);
-    TraceBrowserInput("send-mouse-result",message,result);
     return SUCCEEDED(result);
+}
+void BrowserHost::CancelMouseInput(){CancelNativeMouse(*state_);}
+void BrowserHost::CancelNativeMouse(State& s){
+    // Clear each forwarded button before sending up; ReleaseCapture re-enters
+    // this procedure synchronously via WM_CAPTURECHANGED.
+    for(auto pair:{std::pair<UINT,UINT>{MK_LBUTTON,WM_LBUTTONUP},{MK_RBUTTON,WM_RBUTTONUP},{MK_MBUTTON,WM_MBUTTONUP},{MK_XBUTTON1,WM_XBUTTONUP},{MK_XBUTTON2,WM_XBUTTONUP}}){
+        if(s.nativeButtons&pair.first){s.nativeButtons&=~pair.first;SendMouse(s,pair.second,s.nativeButtons,pair.first==MK_XBUTTON1?XBUTTON1:pair.first==MK_XBUTTON2?XBUTTON2:0,s.nativePoint);}
+    }
+    if(s.surface&&GetCapture()==s.surface)ReleaseCapture();
+    SendMouse(s,WM_MOUSELEAVE,0,0,{});
 }
 void BrowserHost::SetWheelHandler(std::function<bool(int,UINT)> handler){state_->wheel=std::move(handler);}
 bool BrowserHost::HandleParentWheel(UINT message,WPARAM w,LPARAM l){
@@ -263,12 +270,12 @@ bool BrowserHost::HandleParentWheel(UINT message,WPARAM w,LPARAM l){
     return HandleSurfaceMouse(*s,message,w,l);
 }
 bool BrowserHost::HandleSurfaceMouse(State& s,UINT message,WPARAM w,LPARAM l){
-    if(GetWindowLongPtrW(s.parent,GWL_EXSTYLE)&(WS_EX_TRANSPARENT|WS_EX_NOACTIVATE))return false;
     const bool wheel=message==WM_MOUSEWHEEL||message==WM_MOUSEHWHEEL;
     const bool down=message==WM_LBUTTONDOWN||message==WM_RBUTTONDOWN||message==WM_MBUTTONDOWN||message==WM_XBUTTONDOWN||message==WM_LBUTTONDBLCLK||message==WM_RBUTTONDBLCLK||message==WM_MBUTTONDBLCLK||message==WM_XBUTTONDBLCLK;
     const bool up=message==WM_LBUTTONUP||message==WM_RBUTTONUP||message==WM_MBUTTONUP||message==WM_XBUTTONUP;
     if(!wheel&&!down&&!up&&message!=WM_MOUSEMOVE&&message!=WM_MOUSELEAVE)return false;
-    TraceBrowserInput("native-surface-mouse",message);
+    if(!IsWindowVisible(s.parent)||(GetWindowLongPtrW(s.parent,GWL_EXSTYLE)&(WS_EX_TRANSPARENT|WS_EX_NOACTIVATE))){CancelNativeMouse(s);return false;}
+    if(message==WM_MOUSELEAVE&&GetCapture()==s.surface&&s.nativeButtons)return true;
     POINT point{GET_X_LPARAM(l),GET_Y_LPARAM(l)};
     if(wheel)ScreenToClient(s.surface,&point);
     UINT data=wheel?static_cast<UINT>(GET_WHEEL_DELTA_WPARAM(w)):(message==WM_XBUTTONDOWN||message==WM_XBUTTONUP||message==WM_XBUTTONDBLCLK?GET_XBUTTON_WPARAM(w):0);
@@ -280,8 +287,11 @@ bool BrowserHost::HandleSurfaceMouse(State& s,UINT message,WPARAM w,LPARAM l){
     if(message==WM_MOUSEMOVE){TRACKMOUSEEVENT track{sizeof(track),TME_LEAVE,s.surface,0};TrackMouseEvent(&track);}
     const UINT keys=GET_KEYSTATE_WPARAM(w);
     const bool sent=SendMouse(s,message,keys,data,point);
-    if(sent){s.nativePoint=point;s.nativeButtons=keys&(MK_LBUTTON|MK_RBUTTON|MK_MBUTTON|MK_XBUTTON1|MK_XBUTTON2);}
-    if(up&&!(keys&(MK_LBUTTON|MK_RBUTTON|MK_MBUTTON|MK_XBUTTON1|MK_XBUTTON2))&&GetCapture()==s.surface)ReleaseCapture();
+    if(sent&&message!=WM_MOUSELEAVE){s.nativePoint=point;s.nativeButtons=keys&(MK_LBUTTON|MK_RBUTTON|MK_MBUTTON|MK_XBUTTON1|MK_XBUTTON2);}
+    if(up&&!(keys&(MK_LBUTTON|MK_RBUTTON|MK_MBUTTON|MK_XBUTTON1|MK_XBUTTON2))&&GetCapture()==s.surface){
+        ReleaseCapture();
+        RECT client{};if(GetClientRect(s.surface,&client)&&!PtInRect(&client,point))SendMouse(s,WM_MOUSELEAVE,0,0,{});
+    }
     // Own this input even while a navigation is pending; do not bubble a wheel
     // back to the parent and deliver the same user action a second time.
     return true;
@@ -291,16 +301,11 @@ LRESULT CALLBACK BrowserHost::SurfaceProcedure(HWND hwnd,UINT message,WPARAM w,L
     if(message==WM_NCCREATE){s=static_cast<State*>(reinterpret_cast<CREATESTRUCTW*>(l)->lpCreateParams);SetWindowLongPtrW(hwnd,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(s));}
     if(message==WM_NCDESTROY){SetWindowLongPtrW(hwnd,GWLP_USERDATA,0);return DefWindowProcW(hwnd,message,w,l);}
     if(s)try{
-        if(message==WM_NCHITTEST){TraceBrowserInput("native-surface-hit");return GetWindowLongPtrW(s->parent,GWL_EXSTYLE)&WS_EX_TRANSPARENT?HTTRANSPARENT:HTCLIENT;}
+        if(message==WM_NCHITTEST){return GetWindowLongPtrW(s->parent,GWL_EXSTYLE)&WS_EX_TRANSPARENT?HTTRANSPARENT:HTCLIENT;}
         if(message==WM_SETCURSOR&&LOWORD(l)==HTCLIENT){HCURSOR cursor=nullptr;if(s->composition)s->composition->get_Cursor(&cursor);SetCursor(cursor?cursor:LoadCursorW(nullptr,IDC_ARROW));return TRUE;}
-        if(message==WM_CAPTURECHANGED||message==WM_CANCELMODE){
-            for(auto pair:{std::pair<UINT,UINT>{MK_LBUTTON,WM_LBUTTONUP},{MK_RBUTTON,WM_RBUTTONUP},{MK_MBUTTON,WM_MBUTTONUP},{MK_XBUTTON1,WM_XBUTTONUP},{MK_XBUTTON2,WM_XBUTTONUP}}){
-                if(s->nativeButtons&pair.first){s->nativeButtons&=~pair.first;SendMouse(*s,pair.second,s->nativeButtons,pair.first==MK_XBUTTON1?XBUTTON1:pair.first==MK_XBUTTON2?XBUTTON2:0,s->nativePoint);}
-            }
-            if(message==WM_CANCELMODE&&GetCapture()==hwnd)ReleaseCapture();
-        }
+        if(message==WM_CANCELMODE||(message==WM_CAPTURECHANGED&&s->nativeButtons))CancelNativeMouse(*s);
         if(HandleSurfaceMouse(*s,message,w,l))return message==WM_XBUTTONDOWN||message==WM_XBUTTONUP||message==WM_XBUTTONDBLCLK?TRUE:0;
-    }catch(...){TraceBrowserInput("native-input-exception",message);}
+    }catch(...){/* Exceptions must not cross the native window procedure. */}
     return DefWindowProcW(hwnd,message,w,l);
 }
 void BrowserHost::GoBack() {if(CanGoBack()){if(state_->cancelGesture)state_->cancelGesture();state_->view->GoBack();}}

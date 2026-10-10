@@ -80,7 +80,7 @@ void SettingsPage::Choice(Panel panel,const std::wstring& name,std::vector<std::
  ComboBox box;box.Width(164);AccessibleName(box,name);for(const auto& item:options)box.Items().Append(box_value(item));Row(panel,name,box);
  fields_[name]={box,[box,set](auto& settings){set(settings,box.SelectedIndex());return miniwindow::OperationResult{};},[box,get](const auto& settings){box.SelectedIndex(get(settings));}};box.SelectionChanged([this,name](auto&&,auto&&){Changed(name,true);});
 }
-void SettingsPage::Bind(miniwindow::AppCoordinator& app,std::function<void(miniwindow::HotkeyAction)> capture,std::function<void()>,std::function<void()> cancelCapture){
+void SettingsPage::Bind(miniwindow::AppCoordinator& app,std::function<void(miniwindow::HotkeyAction)> capture,std::function<void()> cancelCapture){
  app_=&app;syncing_=true;cancelCapture_=std::move(cancelCapture);
  for(int i=0;i<6;++i){Panel section;section.Spacing(6);section.Visibility(Visibility::Collapsed);Sections().Children().Append(section);panels_.push_back(section);}
  SelectCategory(0);

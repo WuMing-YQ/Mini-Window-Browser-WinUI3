@@ -24,6 +24,7 @@ public:
     void SetNavigationHandlers(std::function<void()> cancelGesture,std::function<void(std::wstring)> newTab,std::function<void()> closeTab);
     void SetFocusHandler(std::function<void(bool)>);
     void Focus();
+    void CancelMouseInput();
     bool SendMouseInput(UINT message,UINT keys,UINT data,POINT point);
     bool HandleParentWheel(UINT,WPARAM,LPARAM);
     void SetWheelHandler(std::function<bool(int,UINT)>);
@@ -35,6 +36,7 @@ public:
 private:
     struct State;
     static LRESULT CALLBACK SurfaceProcedure(HWND,UINT,WPARAM,LPARAM);
+    static void CancelNativeMouse(State&);
     static bool SendMouse(State&,UINT,UINT,UINT,POINT);
     static bool HandleSurfaceMouse(State&,UINT,WPARAM,LPARAM);
     static void ConfigureEvents(const std::shared_ptr<State>&,uint64_t);

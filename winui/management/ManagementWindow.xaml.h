@@ -6,7 +6,7 @@
 namespace miniwindow {enum class ManagementPage{Bookmarks,Presets,Settings};}
 namespace winrt::MiniWindow::implementation {
 struct ManagementWindow:ManagementWindowT<ManagementWindow>{
- ManagementWindow();void Bind(HWND,miniwindow::AppCoordinator&,std::function<void()>,std::function<bool(UINT,UINT)>,std::function<void(miniwindow::HotkeyAction)>,std::function<void()> panel={},std::function<void()> cancelCapture={});void Open(miniwindow::ManagementPage);void Refresh();void RefreshTheme();void Shutdown();bool Dirty();bool ForegroundTextFocus();
+ ManagementWindow();void Bind(HWND,miniwindow::AppCoordinator&,std::function<void()>,std::function<bool(UINT,UINT)>,std::function<void(miniwindow::HotkeyAction)>,std::function<void()> cancelCapture={});void Open(miniwindow::ManagementPage);void Refresh();void RefreshTheme();void Shutdown();bool Dirty();bool ForegroundTextFocus();
  Windows::Foundation::IAsyncOperation<bool> CanLeaveAsync();
 private:Windows::Foundation::IAsyncAction NavigateAsync(miniwindow::ManagementPage,int category=-1);Windows::Foundation::IAsyncAction HideAsync();void SetPage(miniwindow::ManagementPage,int category=-1);void SyncNavigation();
  std::function<void()> cancelCapture_;

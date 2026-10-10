@@ -167,11 +167,18 @@ void WindowModeController::FitWebFullscreenAspect(double aspectRatio) {
         videoFitActive_ = true;
     }
 
+    // Automatic sizing emits WM_SIZE/WM_MOVE synchronously. Preserve the
+    // pre-fullscreen rectangle instead of treating those messages as a user drag.
+    struct ModeGuard { bool& flag; bool previous; ~ModeGuard(){flag=previous;} } guard{applyingMode_,applyingMode_};
+    applyingMode_=true;
+    const RECT insets=ContentInsets();
+    const LONG extraWidth=insets.left+insets.right;
     const RECT monitor = CurrentMonitorRect(false);
     const RECT work = CurrentMonitorRect(true);
-    const SIZE target = CalculateAspectFitWindowSize(
-        current.right - current.left, chromeHeight_, aspectRatio,
-        monitor.right - monitor.left, monitor.bottom - monitor.top);
+    SIZE target = CalculateAspectFitWindowSize(
+        current.right-current.left-extraWidth, insets.top+insets.bottom, aspectRatio,
+        monitor.right-monitor.left-extraWidth, monitor.bottom-monitor.top);
+    target.cx+=extraWidth;
     const RECT desired = PositionAspectFitRect(
         current, target, monitor, work, settings_ ? settings_->snapThreshold : 0);
     Position(window_, HWND_TOPMOST, desired.left, desired.top,
@@ -180,15 +187,32 @@ void WindowModeController::FitWebFullscreenAspect(double aspectRatio) {
     if (layoutCallback_) layoutCallback_();
 }
 
+RECT WindowModeController::ContentInsets() const {
+    RECT outer{};
+    if(contentRectProvider_&&GetWindowRect(window_,&outer)){
+        const RECT content=contentRectProvider_();
+        if(content.right>content.left&&content.bottom>content.top&&
+           content.left>=outer.left&&content.top>=outer.top&&
+           content.right<=outer.right&&content.bottom<=outer.bottom)
+            return {content.left-outer.left,content.top-outer.top,
+                    outer.right-content.right,outer.bottom-content.bottom};
+    }
+    // Legacy Win32 UI still supplies a single chrome height.
+    return {0,IsImmersive()?0:chromeHeight_,0,0};
+}
+
 bool WindowModeController::ConstrainWebFullscreenSizing(UINT sizingEdge, RECT* sizingRect) const {
     if (!sizingRect || !settings_ || !webFullscreen_ ||
         !settings_->autoFitVideoFullscreen || !settings_->lockVideoFullscreenAspect ||
         !std::isfinite(webFullscreenAspect_) || webFullscreenAspect_ <= 0.1) {
         return false;
     }
-    const int visibleChromeHeight = IsImmersive() ? 0 : chromeHeight_;
-    *sizingRect = ConstrainAspectSizingRect(*sizingRect, sizingEdge, visibleChromeHeight,
-                                            webFullscreenAspect_);
+    const RECT insets=ContentInsets();
+    RECT content{sizingRect->left+insets.left,sizingRect->top+insets.top,
+                 sizingRect->right-insets.right,sizingRect->bottom-insets.bottom};
+    content=ConstrainAspectSizingRect(content,sizingEdge,0,webFullscreenAspect_);
+    *sizingRect={content.left-insets.left,content.top-insets.top,
+                 content.right+insets.right,content.bottom+insets.bottom};
     return true;
 }
 

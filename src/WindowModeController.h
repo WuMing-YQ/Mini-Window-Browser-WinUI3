@@ -69,6 +69,7 @@ private:
     void ApplyVisibleMode(WindowMode mode, bool restoreGeometry);
     void ApplyStyle(DWORD style, DWORD exStyle) const;
     RECT CurrentMonitorRect(bool workArea) const;
+    RECT ContentInsets() const;
     BYTE ConfiguredAlpha(bool cursorInside=false) const;
     void ClearRegionAndOpacity() const;
     RECT EnsureVisible(RECT rect, bool useWorkArea = false) const;

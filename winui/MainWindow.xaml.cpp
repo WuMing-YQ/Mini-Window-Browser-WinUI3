@@ -6,7 +6,6 @@
 #include "management/UIHelpers.h"
 #include "window/ThemeSync.h"
 #include "input/OwnedFocus.h"
-#include "browser/InputTrace.h"
 #include <commctrl.h>
 #include <wil/resource.h>
 #include <windowsx.h>
@@ -23,7 +22,6 @@
 namespace winrt::MiniWindow::implementation {
 MainWindow::MainWindow() {
     InitializeComponent();
-    miniwindow::TraceBrowserInput("startup-input-diagnostics");
     winrt::check_hresult(this->try_as<IWindowNative>()->get_WindowHandle(&hwnd_));
     wchar_t executable[32768]{};GetModuleFileNameW(nullptr,executable,32768);
     directory_=std::filesystem::path(executable).parent_path();
@@ -88,7 +86,7 @@ MainWindow::MainWindow() {
     Root().Loaded([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get();self&&!self->closed_)self->StartBrowser();});
     Closed([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get()){self->closed_=true;if(self->management_)self->management_->Shutdown();if(self->immersionPanel_)self->immersionPanel_->Shutdown();if(self->coordinator_)self->coordinator_->Subscribe({});self->browserPort_.host=nullptr;if(self->input_)self->input_->Stop();self->systemTheme_.ColorValuesChanged(self->themeToken_);RemoveWindowSubclass(self->hwnd_,WindowProcedure,1);self->windowService_.reset();self->tray_.reset();if(self->browser_)self->browser_->Close();if(self->initialization_)self->initialization_.Cancel();self->browser_.reset();if(self->profileLock_){CloseHandle(self->profileLock_);self->profileLock_=nullptr;}}});
 }
-void MainWindow::SetDialogActive(bool active){dialogDepth_=std::max(0,dialogDepth_+(active?1:-1));if(browser_)browser_->SetOccluded(dialogDepth_>0);}
+void MainWindow::SetDialogActive(bool active){if(active)WebSlot().ReleasePointerCaptures();dialogDepth_=std::max(0,dialogDepth_+(active?1:-1));if(browser_)browser_->SetOccluded(dialogDepth_>0);}
 void MainWindow::ShowError(const std::wstring& error) {const auto message=configError_+(configError_.empty()?L"":L"\n")+inputError_+error;ErrorText().Text(message);ErrorPanel().Visibility(message.empty()||(windowService_&&windowService_->Immersive())?Microsoft::UI::Xaml::Visibility::Collapsed:Microsoft::UI::Xaml::Visibility::Visible);}
 bool MainWindow::AcquireProfile(const std::filesystem::path& path) {
     auto identity=std::filesystem::absolute(path).wstring();for(auto& c:identity)c=static_cast<wchar_t>(towlower(c));
@@ -124,7 +122,7 @@ Windows::Foundation::IAsyncAction MainWindow::InitializeBrowserAsync() {
         browser_->SetDocumentHandler([weak=get_weak()](std::wstring url,std::wstring title){if(auto self=weak.get();self&&!self->closed_){self->coordinator_->OnDocument(std::move(url),std::move(title));}});
         browser_->SetFocusHandler([weak=get_weak()](bool focused){if(auto self=weak.get();self&&!self->closed_){self->webFocused_=focused;self->RefreshOwnedFocus();}});
         browser_->SetNavigationHandlers([weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_){self->input_->CancelGesture();}},[weak=get_weak()](std::wstring url){if(auto self=weak.get();self&&!self->closed_){self->coordinator_->AddTab(std::move(url));}},[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_){self->input_->CancelGesture();self->coordinator_->CloseTab(static_cast<size_t>(self->state_.currentTabIndex));}});
-        browser_->SetPageSignalHandler([weak=get_weak()](miniwindow::PageSignal signal){if(auto self=weak.get();self&&!self->closed_){if(signal.kind==miniwindow::PageSignal::Fullscreen){self->webFullscreen_=signal.flag;self->windowService_->OnWebFullscreen(signal.flag);self->input_->SetImmersiveWebFullscreen(signal.flag&&self->windowService_->Immersive());}else if(signal.kind==miniwindow::PageSignal::VideoAspect)self->windowService_->OnWebFullscreen(true,signal.aspect);}});
+        browser_->SetPageSignalHandler([weak=get_weak()](miniwindow::PageSignal signal){if(auto self=weak.get();self&&!self->closed_){if(signal.kind==miniwindow::PageSignal::Fullscreen){self->webFullscreen_=signal.flag;self->windowService_->OnWebFullscreen(signal.flag);self->input_->SetImmersiveWebFullscreen(signal.flag&&self->windowService_->Immersive());}else if(signal.kind==miniwindow::PageSignal::VideoAspect&&self->webFullscreen_)self->windowService_->OnWebFullscreen(true,signal.aspect);}});
         LayoutBrowser();browser_->Navigate(state_.tabs[static_cast<size_t>(state_.currentTabIndex)].url);
         co_await browser_->InitializeAsync();
     }catch(const winrt::hresult_error& error){if(!closed_)ShowError(std::wstring(error.message()));}
@@ -166,13 +164,12 @@ void MainWindow::ApplyFrame(miniwindow::WindowMode mode) {
     ExtendsContentIntoTitleBar(false);SetTitleBar(nullptr);presenter.SetBorderAndTitleBar(normal,normal);
     miniwindow::ThemeSync::Apply(hwnd_,state_.settings.themeMode,Root(),AppWindow());
 }
-void MainWindow::SyncWindowState(){if(!windowService_)return;if(input_)input_->CancelGesture();state_.windowHidden=windowService_->Hidden();state_.immersionActive=windowService_->Immersive();state_.windowMode=windowService_->VisibleMode();if(browser_)browser_->SetVisible(!state_.windowHidden);if(input_){input_->RefreshRuntime();input_->SetImmersiveWebFullscreen(webFullscreen_&&state_.immersionActive);}if(coordinator_)coordinator_->OnWindowState(state_.windowMode,state_.windowHidden,state_.immersionActive);UpdateChromeLayout();LayoutBrowser();}
+void MainWindow::SyncWindowState(){if(!windowService_)return;if(input_)input_->CancelGesture();state_.windowHidden=windowService_->Hidden();state_.immersionActive=windowService_->Immersive();state_.windowMode=windowService_->VisibleMode();if(state_.windowHidden||state_.immersionActive){WebSlot().ReleasePointerCaptures();if(browser_)browser_->CancelMouseInput();}if(browser_)browser_->SetVisible(!state_.windowHidden);if(input_){input_->RefreshRuntime();input_->SetImmersiveWebFullscreen(webFullscreen_&&state_.immersionActive);}if(coordinator_)coordinator_->OnWindowState(state_.windowMode,state_.windowHidden,state_.immersionActive);UpdateChromeLayout();LayoutBrowser();}
 void MainWindow::MaximizeClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&){auto result=windowService_->SetMode(windowService_->Mode()==miniwindow::WindowMode::Maximized?miniwindow::WindowMode::Normal:miniwindow::WindowMode::Maximized);SyncWindowState();if(!result.ok)ShowError(result.message);}
 void MainWindow::ImmersionClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&){auto result=windowService_->Immersive()?windowService_->SetMode(windowService_->ImmersionReturnMode()):windowService_->SetMode(state_.settings.immersionStyle==miniwindow::ImmersionStyle::Hole?miniwindow::WindowMode::ImmersionHole:miniwindow::WindowMode::ImmersionAutoHide);SyncWindowState();if(!result.ok)ShowError(result.message);}
 void MainWindow::HideClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&){auto result=windowService_->SetHidden(true);SyncWindowState();if(!result.ok)ShowError(result.message);}
 LRESULT CALLBACK MainWindow::WindowProcedure(HWND hwnd,UINT message,WPARAM parameter,LPARAM data,UINT_PTR,DWORD_PTR reference) {
     auto self=reinterpret_cast<MainWindow*>(reference);if(!self||self->closed_)return DefSubclassProc(hwnd,message,parameter,data);
-    if(message==WM_NCHITTEST||message==WM_LBUTTONDOWN||message==WM_MOUSEWHEEL||message==WM_POINTERDOWN)miniwindow::TraceBrowserInput("native-main",message);
     if(self->input_)self->input_->OnMessage(message,parameter,data);
     if(self->tray_)self->tray_->HandleMessage(message,parameter,data);
     if(self->browser_&&(message==WM_MOUSEWHEEL||message==WM_MOUSEHWHEEL)&&self->browser_->HandleParentWheel(message,parameter,data))return 0;
@@ -191,12 +188,6 @@ LRESULT CALLBACK MainWindow::WindowProcedure(HWND hwnd,UINT message,WPARAM param
 
 void MainWindow::InitializeBrowserInput(){
     using namespace Microsoft::UI::Xaml::Input;
-    auto observe=[weak=get_weak()](UINT kind){return PointerEventHandler([weak,kind](auto&&,PointerRoutedEventArgs const& args){if(auto self=weak.get()){
-        miniwindow::TraceBrowserInput("xaml-root",kind,(args.Handled()?1:0)|(self->dialogDepth_>0?2:0)|(self->windowService_->Immersive()?4:0)|(self->windowService_->Hidden()?8:0));
-    }});};
-    Root().AddHandler(Microsoft::UI::Xaml::UIElement::PointerPressedEvent(),box_value(observe(WM_LBUTTONDOWN)),true);
-    Root().AddHandler(Microsoft::UI::Xaml::UIElement::PointerWheelChangedEvent(),box_value(observe(WM_MOUSEWHEEL)),true);
-    Root().AddHandler(Microsoft::UI::Xaml::UIElement::PointerMovedEvent(),box_value(observe(WM_MOUSEMOVE)),true);
     auto forward=[weak=get_weak()](UINT kind){return [weak,kind](auto&&,PointerRoutedEventArgs const& args){if(auto self=weak.get();self&&!self->closed_)self->ForwardBrowserPointer(kind,args);};};
     WebSlot().PointerPressed(forward(WM_LBUTTONDOWN));
     WebSlot().PointerReleased(forward(WM_LBUTTONUP));
@@ -214,9 +205,7 @@ void MainWindow::InitializeBrowserInput(){
     WebSlot().PointerCaptureLost(cancel);WebSlot().PointerCanceled(cancel);
 }
 void MainWindow::ForwardBrowserPointer(UINT kind,Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args){
-    miniwindow::TraceBrowserInput("xaml-webslot",kind,(!browser_?1:0)|(dialogDepth_>0?2:0)|(windowService_->Immersive()?4:0)|(windowService_->Hidden()?8:0));
     if(!browser_||dialogDepth_>0||windowService_->Immersive()||windowService_->Hidden())return;
-    miniwindow::TraceBrowserInput("pointer-device",kind,static_cast<int>(args.Pointer().PointerDeviceType()));
     if(args.Pointer().PointerDeviceType()!=Microsoft::UI::Input::PointerDeviceType::Mouse)return;
     const auto point=args.GetCurrentPoint(WebSlot());const auto properties=point.Properties();
     const double scale=GetDpiForWindow(hwnd_)/96.0;
@@ -368,7 +357,7 @@ void MainWindow::OpenManagement(miniwindow::ManagementPage page){
         if(!management_){
             candidate=make_self<ManagementWindow>();
             stage="bind management pages";
-            candidate->Bind(hwnd_,*coordinator_,[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_)self->RefreshOwnedFocus();},[weak=get_weak()](UINT key,UINT modifiers){if(auto self=weak.get();self&&!self->closed_)return self->input_->CaptureKey(key,modifiers);return false;},[weak=get_weak()](auto action){if(auto self=weak.get();self&&!self->closed_)self->input_->BeginCapture(action);},[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_)self->OpenImmersionPanel();},[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_&&self->input_)self->input_->CancelCapture();});
+            candidate->Bind(hwnd_,*coordinator_,[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_)self->RefreshOwnedFocus();},[weak=get_weak()](UINT key,UINT modifiers){if(auto self=weak.get();self&&!self->closed_)return self->input_->CaptureKey(key,modifiers);return false;},[weak=get_weak()](auto action){if(auto self=weak.get();self&&!self->closed_)self->input_->BeginCapture(action);},[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_&&self->input_)self->input_->CancelCapture();});
             // Binding can publish input status. Expose the window only once every page is ready.
             management_=std::move(candidate);
         }
