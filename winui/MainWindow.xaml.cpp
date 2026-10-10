@@ -24,7 +24,7 @@ namespace winrt::MiniWindow::implementation {
 MainWindow::MainWindow() {
     InitializeComponent();
     winrt::check_hresult(this->try_as<IWindowNative>()->get_WindowHandle(&hwnd_));
-    miniwindow::ApplyApplicationIcon(AppWindow(),hwnd_);
+    miniwindow::ApplyApplicationIcon(AppWindow());
 
     wchar_t executable[32768]{};GetModuleFileNameW(nullptr,executable,32768);
     directory_=std::filesystem::path(executable).parent_path();
@@ -164,9 +164,24 @@ void MainWindow::ApplyFrame(miniwindow::WindowMode mode) {
     if(mode==miniwindow::WindowMode::Hidden)return;
     const bool normal=mode==miniwindow::WindowMode::Normal||mode==miniwindow::WindowMode::Maximized;
     const auto presenter=AppWindow().Presenter().as<Microsoft::UI::Windowing::OverlappedPresenter>();
-    ExtendsContentIntoTitleBar(false);SetTitleBar(nullptr);presenter.SetBorderAndTitleBar(normal,normal);
-    miniwindow::ApplyCaptionIcon(hwnd_);
+    // Draw icon and text in one XAML row so both share the same vertical center.
+    // Keep system caption buttons and native dragging, including double-click.
+    presenter.SetBorderAndTitleBar(normal,normal);
+    ExtendsContentIntoTitleBar(true);
+    if(normal){
+        AppWindow().TitleBar().PreferredHeightOption(Microsoft::UI::Windowing::TitleBarHeightOption::Standard);
+        SetTitleBar(CaptionDragArea());
+        UpdateCaptionLayout();
+    }else SetTitleBar(nullptr);
     miniwindow::ThemeSync::Apply(hwnd_,state_.settings.themeMode,Root(),AppWindow());
+}
+void MainWindow::UpdateCaptionLayout() {
+    if(windowService_&&windowService_->Immersive())return;
+    const auto bar=AppWindow().TitleBar();
+    const double scale=std::max(1U,GetDpiForWindow(hwnd_))/96.0;
+    CaptionRow().Height(std::max(32.0,bar.Height()/scale));
+    CaptionLeftInset().Width({bar.LeftInset()/scale,Microsoft::UI::Xaml::GridUnitType::Pixel});
+    CaptionRightInset().Width({bar.RightInset()/scale,Microsoft::UI::Xaml::GridUnitType::Pixel});
 }
 void MainWindow::SyncWindowState(){if(!windowService_)return;if(input_)input_->CancelGesture();state_.windowHidden=windowService_->Hidden();state_.immersionActive=windowService_->Immersive();state_.windowMode=windowService_->VisibleMode();if(state_.windowHidden||state_.immersionActive){WebSlot().ReleasePointerCaptures();if(browser_)browser_->CancelMouseInput();}if(browser_)browser_->SetVisible(!state_.windowHidden);if(input_){input_->RefreshRuntime();input_->SetImmersiveWebFullscreen(webFullscreen_&&state_.immersionActive);}if(coordinator_)coordinator_->OnWindowState(state_.windowMode,state_.windowHidden,state_.immersionActive);UpdateChromeLayout();LayoutBrowser();}
 void MainWindow::MaximizeClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&){auto result=windowService_->SetMode(windowService_->Mode()==miniwindow::WindowMode::Maximized?miniwindow::WindowMode::Normal:miniwindow::WindowMode::Maximized);SyncWindowState();if(!result.ok)ShowError(result.message);}
@@ -188,7 +203,7 @@ LRESULT CALLBACK MainWindow::WindowProcedure(HWND hwnd,UINT message,WPARAM param
         if(message==WM_DPICHANGED||message==WM_WINDOWPOSCHANGED)self->LayoutBrowser();
     }
     const auto result=DefSubclassProc(hwnd,message,parameter,data);
-    if(message==WM_DPICHANGED)miniwindow::ApplyCaptionIcon(hwnd,HIWORD(parameter));
+    if(message==WM_DPICHANGED)self->UpdateCaptionLayout();
     return result;
 }
 
@@ -290,7 +305,7 @@ void MainWindow::RenderSnapshot(const miniwindow::AppSnapshot& snapshot){
     const auto& active=state.tabs[static_cast<size_t>(state.currentTabIndex)];
     if(renderedTab_!=state.currentTabIndex||(renderedUrl_!=active.url&&!miniwindow::HasOwnedTextFocus(Root().XamlRoot())))Address().Text(active.url);
     renderedTab_=state.currentTabIndex;renderedUrl_=active.url;
-    Title(active.title.empty()?L"小窗浏览器":active.title);ActiveTabTitle().Text(active.title.empty()?L"网页":active.title);
+    Title(active.title.empty()?L"小窗浏览器":active.title);CaptionTitle().Text(Title());ActiveTabTitle().Text(active.title.empty()?L"网页":active.title);
     std::wstring identity;for(const auto& tab:state.tabs)identity+=std::to_wstring(tab.title.size())+L":"+tab.title+L"|"+std::to_wstring(tab.url.size())+L":"+tab.url+L";";
     syncingTabs_=true;
     if(identity!=renderedTabs_){renderedTabs_=std::move(identity);Tabs().TabItems().Clear();for(size_t i=0;i<state.tabs.size();++i){
@@ -309,6 +324,7 @@ void MainWindow::RenderSnapshot(const miniwindow::AppSnapshot& snapshot){
 }
 void MainWindow::UpdateChromeLayout(){
     using namespace Microsoft::UI::Xaml;using Controls::Grid;
+    UpdateCaptionLayout();
     const double width=Root().ActualWidth();
     const bool stacked=width<400,tiny=width<200;
     // The address gets the remaining width. Small windows wrap the same

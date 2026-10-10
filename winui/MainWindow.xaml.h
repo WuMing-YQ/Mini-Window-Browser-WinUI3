@@ -37,6 +37,7 @@ private:
     Windows::Foundation::IAsyncAction ToggleBookmarkAsync();
     Windows::Foundation::IAsyncAction RequestCloseAsync();
     void ApplyFrame(miniwindow::WindowMode);
+    void UpdateCaptionLayout();
     void SyncWindowState();
     void HandleHotkey(miniwindow::HotkeyAction,miniwindow::HotkeyGesture);
     void RefreshOwnedFocus();
