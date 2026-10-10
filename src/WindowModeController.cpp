@@ -296,7 +296,8 @@ void WindowModeController::SnapMovingRect(RECT* movingRect, bool controlHeld) co
     HMONITOR monitor = MonitorFromRect(&visible, MONITOR_DEFAULTTONEAREST);
     MONITORINFO info{sizeof(info)};
     if (!GetMonitorInfoW(monitor, &info)) return;
-    const RECT screen = info.rcWork;
+    // Dock to the monitor edge, including the taskbar strip.
+    const RECT screen = info.rcMonitor;
     const int threshold = settings_->snapThreshold;
     LONG dx=0,dy=0;
     if (std::abs(visible.left - screen.left) <= threshold) dx=screen.left-visible.left;

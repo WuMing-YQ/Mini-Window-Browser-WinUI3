@@ -68,7 +68,7 @@ private:
     RECT CurrentMonitorRect(bool workArea) const;
     BYTE ConfiguredAlpha(bool cursorInside=false) const;
     void ClearRegionAndOpacity() const;
-    RECT EnsureVisible(RECT rect, bool useWorkArea = true) const;
+    RECT EnsureVisible(RECT rect, bool useWorkArea = false) const;
 
     bool Check(bool success,const wchar_t* operation) const;
     bool Position(HWND,HWND,int,int,int,int,UINT) const;
