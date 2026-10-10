@@ -36,7 +36,6 @@ std::wstring Serialize(const AppState& state) {
     WriteInt(transactionPath, kSettings, L"FixedWebZoomEnabled", settings.fixedWebZoomEnabled ? 1 : 0);
     WriteInt(transactionPath, kSettings, L"FixedWebZoomPercent", settings.fixedWebZoomPercent);
     WriteInt(transactionPath, kSettings, L"AutoPause", settings.autoPauseOnHide ? 1 : 0);
-    WriteInt(transactionPath, kSettings, L"DisableHkOnTyping", settings.disableHotkeysOnTyping ? 1 : 0);
     WriteInt(transactionPath, kSettings, L"SystemTray", settings.useSystemTray ? 1 : 0);
     WriteInt(transactionPath, kSettings, L"BackgroundMediaHotkeys", settings.backgroundMediaHotkeys ? 1 : 0);
     WriteInt(transactionPath, kSettings, L"AutoFitVideoFullscreen", settings.autoFitVideoFullscreen ? 1 : 0);
@@ -108,7 +107,6 @@ std::wstring Serialize(const AppState& state) {
         WriteInt(transactionPath, kPresets, prefix + L"FixedWebZoomEnabled", preset.fixedWebZoomEnabled ? 1 : 0);
         WriteInt(transactionPath, kPresets, prefix + L"FixedWebZoomPercent", preset.fixedWebZoomPercent);
         WriteInt(transactionPath, kPresets, prefix + L"Pause", preset.autoPauseOnHide ? 1 : 0);
-        WriteInt(transactionPath, kPresets, prefix + L"HkTyping", preset.disableHotkeysOnTyping ? 1 : 0);
         WriteInt(transactionPath, kPresets, prefix + L"SysTray", preset.useSystemTray ? 1 : 0);
         WriteInt(transactionPath, kPresets, prefix + L"BackgroundMedia", preset.backgroundMediaHotkeys ? 1 : 0);
         WriteInt(transactionPath, kPresets, prefix + L"AutoFitVideo", preset.autoFitVideoFullscreen ? 1 : 0);
@@ -178,6 +176,8 @@ OperationResult ReadIni(const std::filesystem::path& path,Ini& ini) {
     return Parse(text,ini);
 }
 using Range=std::pair<long long,long long>;
+// Accept the historical radius range on read; ConfigStore clamps it to 10–2000.
+// This preserves old settings and presets instead of rejecting the whole file.
 const std::map<std::wstring,Range> settingsRanges={
     {L"holeradius",{0,4000}},{L"snapthreshold",{0,200}},
     {L"holeopacitypercent",{0,100}},{L"autohideopacitypercent",{0,100}},

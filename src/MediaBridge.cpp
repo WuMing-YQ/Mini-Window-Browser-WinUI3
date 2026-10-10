@@ -18,32 +18,10 @@ const wchar_t* MediaBridge::BootstrapScript() {
   };
   const frameCommandType = 'MWB_MEDIA_COMMAND_V1';
 
-  const isEditable = (node) => {
-    if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
-    const element = /** @type {HTMLElement} */ (node);
-    const tag = element.tagName ? element.tagName.toLowerCase() : '';
-    return tag === 'input' || tag === 'textarea' || tag === 'select' ||
-      element.isContentEditable || element.getAttribute('role') === 'textbox' ||
-      element.getAttribute('role') === 'searchbox' ||
-      element.getAttribute('aria-multiline') === 'true';
-  };
-
-  let lastTyping = null;
-  const publishTyping = () => {
-    const typing = document.hasFocus() && isEditable(document.activeElement);
-    if (typing === lastTyping) return;
-    lastTyping = typing;
-    try { chrome.webview.postMessage(typing ? 'MWB_TYPING:1' : 'MWB_TYPING:0'); } catch (_) {}
-  };
-  document.addEventListener('focusin', publishTyping, true);
-  document.addEventListener('focusout', () => queueMicrotask(publishTyping), true);
   document.addEventListener('pointerdown', (event) => {
     const video = event.target && event.target.closest ? event.target.closest('video') : null;
     if (video) state.lastInteracted = video;
-    queueMicrotask(publishTyping);
   }, true);
-  window.addEventListener('blur', publishTyping, true);
-  queueMicrotask(publishTyping);
 
   const scoreVideo = (video) => {
     const rect = video.getBoundingClientRect();

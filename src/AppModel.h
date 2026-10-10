@@ -97,7 +97,7 @@ struct AppSettings {
         hoverReductionPercent = std::clamp(hoverReductionPercent, 0, 100);
         constexpr UINT allowedWheelModifiers = MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_WIN;
         if (windowWheelModifiers == 0 || (windowWheelModifiers & ~allowedWheelModifiers) != 0) windowWheelModifiers = MOD_CONTROL | MOD_ALT;
-        holeRadius = std::clamp(holeRadius, 0, 4000);
+        holeRadius = std::clamp(holeRadius, 10, 2000);
         snapThreshold = std::clamp(snapThreshold, 0, 200);
         holeOpacityPercent = std::clamp(holeOpacityPercent, 0, 100);
         autoHideOpacityPercent = std::clamp(autoHideOpacityPercent, 0, 100);

@@ -2,9 +2,9 @@
 <Grid x:Name="Root" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" Padding="24"><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch"><StackPanel Spacing="12">
 <TextBlock Text="沉浸控制" FontSize="24" FontWeight="SemiBold"/>
 <ComboBox x:Name="Mode" Header="模式" HorizontalAlignment="Stretch" AutomationProperties.Name="面板沉浸模式"><ComboBoxItem Content="鼠标挖孔"/><ComboBoxItem Content="移入减淡"/></ComboBox>
-<TextBlock Text="基础不透明度"/><Slider x:Name="Basis" Minimum="0" Maximum="100" StepFrequency="1" AutomationProperties.Name="基础不透明度滑块"/><TextBox x:Name="BasisInput" Header="基础不透明度 (%)" AutomationProperties.Name="面板基础不透明度"/>
-<TextBlock Text="移入时额外减淡的比例"/><Slider x:Name="Reduction" Minimum="0" Maximum="100" StepFrequency="1" AutomationProperties.Name="额外减淡比例滑块"/><TextBox x:Name="ReductionInput" Header="额外减淡比例 (%)" AutomationProperties.Name="面板额外减淡比例"/>
-<TextBox x:Name="RadiusInput" Header="挖孔半径（物理像素，0–4000）" AutomationProperties.Name="面板挖孔半径"/>
+<TextBlock Text="基础不透明度"/><Slider x:Name="Basis" Minimum="0" Maximum="100" StepFrequency="1" AutomationProperties.Name="基础不透明度滑块"/><TextBlock x:Name="BasisValue" AutomationProperties.Name="基础不透明度数值"/>
+<TextBlock Text="移入时额外减淡的比例"/><Slider x:Name="Reduction" Minimum="0" Maximum="100" StepFrequency="1" AutomationProperties.Name="额外减淡比例滑块"/><TextBlock x:Name="ReductionValue" AutomationProperties.Name="额外减淡比例数值"/>
+<TextBlock Text="挖孔半径（物理像素，10–2000）"/><Slider x:Name="Radius" Minimum="10" Maximum="2000" StepFrequency="1" AutomationProperties.Name="面板挖孔半径"/><TextBlock x:Name="RadiusValue"/>
 <TextBlock x:Name="Formula" TextWrapping="Wrap" AutomationProperties.Name="不透明度计算"/>
 <TextBlock x:Name="Current" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.Name="当前显示不透明度"/>
 <Button x:Name="Toggle" Content="进入沉浸" HorizontalAlignment="Stretch" AutomationProperties.Name="面板切换沉浸"/>

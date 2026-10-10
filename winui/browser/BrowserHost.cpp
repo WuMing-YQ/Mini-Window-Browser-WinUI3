@@ -129,16 +129,16 @@ void BrowserHost::ConfigureEvents(const std::shared_ptr<State>& s,uint64_t gener
     winrt::check_hresult(s->controller->add_GotFocus(Callback<ICoreWebView2FocusChangedEventHandler>([current](ICoreWebView2Controller*,IUnknown*)->HRESULT{if(auto s=current();s&&s->focus)s->focus(true);return S_OK;}).Get(),&s->gotFocus));
     winrt::check_hresult(s->controller->add_LostFocus(Callback<ICoreWebView2FocusChangedEventHandler>([current](ICoreWebView2Controller*,IUnknown*)->HRESULT{if(auto s=current();s&&s->focus)s->focus(false);return S_OK;}).Get(),&s->lostFocus));
     winrt::check_hresult(s->view->add_NavigationStarting(Callback<ICoreWebView2NavigationStartingEventHandler>([current](ICoreWebView2*,ICoreWebView2NavigationStartingEventArgs* args)->HRESULT {
-        if(auto s=current()) {s->loading=true;s->waiting=true;if(args)args->get_NavigationId(&s->navigationId);if(s->cancelGesture)s->cancelGesture();if(s->signal)s->signal({PageSignal::Typing,false});s->Report();}return S_OK;
+        if(auto s=current()) {s->loading=true;s->waiting=true;if(args)args->get_NavigationId(&s->navigationId);if(s->cancelGesture)s->cancelGesture();s->Report();}return S_OK;
     }).Get(),&s->starting));
     winrt::check_hresult(s->view->add_ContentLoading(Callback<ICoreWebView2ContentLoadingEventHandler>([current](ICoreWebView2*,ICoreWebView2ContentLoadingEventArgs* args)->HRESULT {
         if(auto s=current()) {UINT64 id=0;if(args)args->get_NavigationId(&id);if(id==s->navigationId){s->waiting=false;s->controller->put_IsVisible(s->visible&&!s->occluded);}}return S_OK;
     }).Get(),&s->content));
     winrt::check_hresult(s->view->add_NavigationCompleted(Callback<ICoreWebView2NavigationCompletedEventHandler>([current](ICoreWebView2*,ICoreWebView2NavigationCompletedEventArgs* args)->HRESULT {
         if(auto s=current()) {
-            UINT64 id=0;BOOL ok=FALSE;if(args){args->get_NavigationId(&id);args->get_IsSuccess(&ok);}
+            UINT64 id=0;if(args)args->get_NavigationId(&id);
             if(id!=s->navigationId)return S_OK;
-            s->waiting=false;s->loading=false;s->controller->put_IsVisible(s->visible&&!s->occluded);s->UpdateDocument();s->Report(ok?L"":L"网页加载失败，请重试或更换网址。");
+            s->waiting=false;s->loading=false;s->controller->put_IsVisible(s->visible&&!s->occluded);s->UpdateDocument();s->Report();
         }return S_OK;
     }).Get(),&s->completed));
     winrt::check_hresult(s->view->add_SourceChanged(Callback<ICoreWebView2SourceChangedEventHandler>([current](ICoreWebView2*,ICoreWebView2SourceChangedEventArgs*)->HRESULT {if(auto s=current())s->UpdateDocument();return S_OK;}).Get(),&s->source));

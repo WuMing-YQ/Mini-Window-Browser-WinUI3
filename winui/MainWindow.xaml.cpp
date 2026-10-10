@@ -105,8 +105,8 @@ Windows::Foundation::IAsyncAction MainWindow::InitializeBrowserAsync() {
         browserPort_.host=browser_.get();auto runningSettings=state_.settings;runningSettings.renderMode=coordinator_->RunningRenderMode();browser_->Configure(runningSettings);
         browser_->SetDocumentHandler([weak=get_weak()](std::wstring url,std::wstring title){if(auto self=weak.get();self&&!self->closed_){self->coordinator_->OnDocument(std::move(url),std::move(title));}});
         browser_->SetFocusHandler([weak=get_weak()](bool focused){if(auto self=weak.get();self&&!self->closed_){self->webFocused_=focused;self->RefreshOwnedFocus();}});
-        browser_->SetNavigationHandlers([weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_){self->input_->CancelGesture();self->input_->OnPageTyping(false);}},[weak=get_weak()](std::wstring url){if(auto self=weak.get();self&&!self->closed_){self->coordinator_->AddTab(std::move(url));}},[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_){self->input_->CancelGesture();self->coordinator_->CloseTab(static_cast<size_t>(self->state_.currentTabIndex));}});
-        browser_->SetPageSignalHandler([weak=get_weak()](miniwindow::PageSignal signal){if(auto self=weak.get();self&&!self->closed_){if(signal.kind==miniwindow::PageSignal::Typing)self->input_->OnPageTyping(signal.flag);else if(signal.kind==miniwindow::PageSignal::Fullscreen){self->webFullscreen_=signal.flag;self->windowService_->OnWebFullscreen(signal.flag);self->input_->SetImmersiveWebFullscreen(signal.flag&&self->windowService_->Immersive());}else if(signal.kind==miniwindow::PageSignal::VideoAspect)self->windowService_->OnWebFullscreen(true,signal.aspect);}});
+        browser_->SetNavigationHandlers([weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_){self->input_->CancelGesture();}},[weak=get_weak()](std::wstring url){if(auto self=weak.get();self&&!self->closed_){self->coordinator_->AddTab(std::move(url));}},[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_){self->input_->CancelGesture();self->coordinator_->CloseTab(static_cast<size_t>(self->state_.currentTabIndex));}});
+        browser_->SetPageSignalHandler([weak=get_weak()](miniwindow::PageSignal signal){if(auto self=weak.get();self&&!self->closed_){if(signal.kind==miniwindow::PageSignal::Fullscreen){self->webFullscreen_=signal.flag;self->windowService_->OnWebFullscreen(signal.flag);self->input_->SetImmersiveWebFullscreen(signal.flag&&self->windowService_->Immersive());}else if(signal.kind==miniwindow::PageSignal::VideoAspect)self->windowService_->OnWebFullscreen(true,signal.aspect);}});
         LayoutBrowser();browser_->Navigate(state_.tabs[static_cast<size_t>(state_.currentTabIndex)].url);
         co_await browser_->InitializeAsync();
     }catch(const winrt::hresult_error& error){if(!closed_)ShowError(std::wstring(error.message()));}
@@ -151,7 +151,6 @@ void MainWindow::HideClick(Windows::Foundation::IInspectable const&,Microsoft::U
 LRESULT CALLBACK MainWindow::WindowProcedure(HWND hwnd,UINT message,WPARAM parameter,LPARAM data,UINT_PTR,DWORD_PTR reference) {
     auto self=reinterpret_cast<MainWindow*>(reference);if(!self||self->closed_)return DefSubclassProc(hwnd,message,parameter,data);
     if(self->input_)self->input_->OnMessage(message,parameter,data);
-    if(message==WM_KILLFOCUS&&self->input_)self->input_->SetOwnedTextFocus(false);
     if(self->tray_)self->tray_->HandleMessage(message,parameter,data);
     if(self->windowService_) {
         if(message==WM_SYSCOMMAND){const auto command=parameter&0xfff0;if(command==SC_MAXIMIZE){self->MaximizeClick(nullptr,nullptr);return 0;}if(command==SC_RESTORE&&self->windowService_->Mode()==miniwindow::WindowMode::Maximized){self->MaximizeClick(nullptr,nullptr);return 0;}if(command==SC_MINIMIZE&&self->state_.settings.useSystemTray){self->HideClick(nullptr,nullptr);return 0;}}
@@ -166,7 +165,7 @@ LRESULT CALLBACK MainWindow::WindowProcedure(HWND hwnd,UINT message,WPARAM param
     return DefSubclassProc(hwnd,message,parameter,data);
 }
 
-void MainWindow::RefreshOwnedFocus(){if(!input_)return;const auto foreground=GetAncestor(GetForegroundWindow(),GA_ROOT);const bool ownMain=foreground==hwnd_&&!webFocused_&&miniwindow::HasOwnedTextFocus(Root().XamlRoot());input_->SetOwnedTextFocus(ownMain||(management_&&management_->ForegroundTextFocus())||(immersionPanel_&&immersionPanel_->ForegroundTextFocus()));}
+void MainWindow::RefreshOwnedFocus(){if(input_)input_->RefreshRuntime();}
 void MainWindow::HandleHotkey(miniwindow::HotkeyAction action,miniwindow::HotkeyGesture gesture) {
     using miniwindow::HotkeyAction;using miniwindow::HotkeyGesture;using miniwindow::MediaCommand;
     if(action==HotkeyAction::Immersion){ImmersionClick(nullptr,nullptr);return;}

@@ -198,7 +198,7 @@ bool ConfigStore::Load(AppState& state) const {
         }
         preset.activeTab = std::clamp(ReadInt(path_, kPresets, prefix + L"ActiveTab", 0), 0,
             static_cast<int>(preset.tabs.size()) - 1);
-        preset.holeRadius = std::clamp(preset.holeRadius, 0, 4000);
+        preset.holeRadius = std::clamp(preset.holeRadius, 10, 2000);
         preset.snapThreshold = std::clamp(preset.snapThreshold, 0, 200);
         preset.holeOpacityPercent = std::clamp(preset.holeOpacityPercent, 0, 100);
         preset.autoHideOpacityPercent = std::clamp(preset.autoHideOpacityPercent, 0, 100);

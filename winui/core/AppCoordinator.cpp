@@ -95,7 +95,6 @@ OperationResult AppCoordinator::SaveCurrentPreset(std::wstring name){
     preset.fixedWebZoomPercent=state_.settings.fixedWebZoomPercent;
     preset.fixedWebZoomEnabled=state_.settings.fixedWebZoomEnabled;
     preset.autoPauseOnHide=state_.settings.autoPauseOnHide;
-    preset.disableHotkeysOnTyping=state_.settings.disableHotkeysOnTyping;
     preset.useSystemTray=state_.settings.useSystemTray;
     preset.backgroundMediaHotkeys=state_.settings.backgroundMediaHotkeys;
     preset.autoFitVideoFullscreen=state_.settings.autoFitVideoFullscreen;
@@ -121,7 +120,6 @@ OperationResult AppCoordinator::ApplyPreset(size_t index){
     state_.settings.fixedWebZoomPercent=preset.fixedWebZoomPercent;
     state_.settings.fixedWebZoomEnabled=preset.fixedWebZoomEnabled;
     state_.settings.autoPauseOnHide=preset.autoPauseOnHide;
-    state_.settings.disableHotkeysOnTyping=preset.disableHotkeysOnTyping;
     state_.settings.useSystemTray=preset.useSystemTray;
     state_.settings.backgroundMediaHotkeys=preset.backgroundMediaHotkeys;
     state_.settings.autoFitVideoFullscreen=preset.autoFitVideoFullscreen;

@@ -8,7 +8,7 @@ inline SettingsDependencyState SettingsDependencies(const AppSettings& value){re
 inline OperationResult ValidateSettings(const AppSettings& value){
  if(xiaochuang::TrimWhitespace(value.homeUrl).empty())return {false,L"主页不能为空。"};
  if(value.fixedWebZoomPercent<25||value.fixedWebZoomPercent>500)return {false,L"网页缩放须为 25–500%。"};
- if(value.holeRadius<0||value.holeRadius>4000)return {false,L"挖孔半径须为 0–4000 物理像素。"};
+ if(value.holeRadius<10||value.holeRadius>2000)return {false,L"挖孔半径须为 10–2000 物理像素。"};
  if(value.snapThreshold<0||value.snapThreshold>200)return {false,L"吸附距离须为 0–200。"};
  if(value.holdPlaybackRate<2||value.holdPlaybackRate>5)return {false,L"长按倍速须为 2–5。"};
  if(value.holeOpacityPercent<0||value.holeOpacityPercent>100||value.autoHideOpacityPercent<0||value.autoHideOpacityPercent>100||value.hoverReductionPercent<0||value.hoverReductionPercent>100)return {false,L"不透明度与减淡比例须为 0–100%。"};

@@ -8,24 +8,22 @@ void InputService::Start() {
     wheelOwner_=this;wheelHook_=SetWindowsHookExW(WH_GETMESSAGE,WheelMessageHook,nullptr,GetCurrentThreadId());
     registered_=state_.hotkeys;
     hooksReady_=hotkeys_.Start(hwnd_,&state_.hotkeys,[this](auto action,auto gesture){Dispatch(action,gesture);});
-    guardReady_=guard_.Start(hwnd_,[this](bool){if(running_)RefreshRuntime();});
     SetTimer(hwnd_,kInputTimer,100,nullptr);runtimeKnown_=false;RefreshRuntime();PublishErrors();
 }
 void InputService::Stop() {
     CancelGesture();CancelCapture();running_=false;ResetWheel();
     if(wheelHook_){UnhookWindowsHookEx(wheelHook_);wheelHook_=nullptr;}if(wheelOwner_==this)wheelOwner_=nullptr;
     if(hwnd_)KillTimer(hwnd_,kInputTimer);
-    hotkeys_.Stop();guard_.Stop();runtimeKnown_=false;
+    hotkeys_.Stop();runtimeKnown_=false;
 }
 void InputService::PublishErrors() {
-    auto errors=hotkeys_.RegistrationErrors();if(running_&&!wheelHook_)errors.push_back(L"滚轮窗口输入路由初始化失败。");if(!hooksReady_)errors.push_back(L"键盘钩子或鼠标侧键输入初始化失败。");if(!guardReady_)errors.push_back(L"系统输入保护初始化不完整。");
+    auto errors=hotkeys_.RegistrationErrors();if(running_&&!wheelHook_)errors.push_back(L"滚轮窗口输入路由初始化失败。");if(!hooksReady_)errors.push_back(L"键盘钩子或鼠标侧键输入初始化失败。");
     if(errors_!=errors){errors_=std::move(errors);if(status_)status_();}
 }
 void InputService::RefreshRuntime() {
     RefreshWheelContext();
     if(state_.windowHidden)CancelGesture();
     if(!running_||refreshing_)return;refreshing_=true;
-    guard_.SetEnabled(state_.settings.disableHotkeysOnTyping);guard_.Refresh();
     const bool suppressed=Suppressed();
     if(!runtimeKnown_||lastHidden_!=state_.windowHidden||lastBackground_!=state_.settings.backgroundMediaHotkeys||lastSuppressed_!=suppressed) {
         runtimeKnown_=true;lastHidden_=state_.windowHidden;lastBackground_=state_.settings.backgroundMediaHotkeys;lastSuppressed_=suppressed;
@@ -34,8 +32,6 @@ void InputService::RefreshRuntime() {
     }
     refreshing_=false;
 }
-void InputService::SetOwnedTextFocus(bool focused){guard_.SetOwnedTextFocus(focused);RefreshRuntime();}
-void InputService::OnPageTyping(bool typing){guard_.SetWebTyping(typing);RefreshRuntime();}
 void InputService::Dispatch(HotkeyAction action,HotkeyGesture gesture) {
     if(gesture==HotkeyGesture::HoldStop){if(!hold_||*hold_!=action)return;hold_.reset();if(action_)action_(action,gesture);return;}
     if(!state_.hotkeys[xiaochuang::HotkeyIndex(action)].enabled)return;
@@ -65,8 +61,6 @@ void InputService::OnMessage(UINT message,WPARAM parameter,LPARAM data) {
     if(message==WM_ACTIVATE&&LOWORD(parameter)==WA_INACTIVE){CancelGesture();ResetWheel();return;}
     if(message==WM_TIMER&&parameter==kInputTimer){RefreshRuntime();hotkeys_.Tick();return;}
     if(message==WM_TIMER&&parameter==xiaochuang::kHotkeyHoldTimerId){hotkeys_.Tick();return;}
-    if(message==xiaochuang::kMessageInputGuardResult){guard_.HandleAsyncResult(data);RefreshRuntime();return;}
-    if(message==xiaochuang::kMessageInputFocusChanged){if(guard_.ConsumePendingEvents())CancelGesture();RefreshRuntime();return;}
     if(message==WM_HOTKEY){RefreshRuntime();hotkeys_.HandleHotkeyMessage(static_cast<int>(parameter));}
     else if(message==xiaochuang::kMessageMouseHotkey){RefreshRuntime();hotkeys_.HandleMouseMessage(parameter,data);}
     else if(message==xiaochuang::kMessageKeyboardHotkey){RefreshRuntime();hotkeys_.HandleKeyboardMessage(parameter,data);}
