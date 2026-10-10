@@ -1,8 +1,0 @@
-<Solution>
-  <Configurations>
-    <Platform Name="x64" />
-    <Platform Name="x86" />
-  </Configurations>
-  <Project Path="小窗.vcxproj" Id="bfbbfa5a-d78e-4ce1-b158-0a3c298a753d" />
-  <Project Path="tests/XiaoChuang.Tests.vcxproj" Id="8f1c2b57-7e65-49df-a3c4-1400b8654f31" />
-</Solution>

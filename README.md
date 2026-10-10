@@ -15,7 +15,7 @@
 - [原项目主页与源码](https://github.com/azurplain/Mini-Window-Browser)
 - [原项目发行页面](https://github.com/azurplain/Mini-Window-Browser/releases)（这里下载的是原项目版本）
 - [原项目最新说明](https://github.com/azurplain/Mini-Window-Browser#readme)（直接查看上游，不保留可能过时的本地副本）
-- [当前版使用说明与验证范围](docs/validation/winui-redesign.md)
+- [当前版使用说明与验证范围](docs/usage.md)
 
 当前衍生版尚未在本文指定独立公开仓库或下载页面，请使用随本说明提供的便携包及对应源码包。
 
@@ -44,7 +44,7 @@
 3. **快捷滚轮调窗**：希望通过组合键配合鼠标滚轮，快速调整窗口大小。
 4. **个人需求的贴边处理**：根据自己的窗口摆放习惯，调整贴边时的缩放锚点和屏幕边界处理。
 
-在这一过程中，也借助 Agent 将整个应用界面重构为 WinUI 3。上述选择出于我的个人需求和使用偏好，具体操作见[当前版使用说明](docs/validation/winui-redesign.md)。
+在这一过程中，也借助 Agent 将整个应用界面重构为 WinUI 3。上述选择出于我的个人需求和使用偏好，具体操作见[当前版使用说明](docs/usage.md)。
 
 ## 便携运行
 
@@ -53,12 +53,23 @@
 **精简版首次使用前，需安装 Windows App Runtime 1.8.12（x64），或更新的 1.8 修订版。** 从[微软官方下载页](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads-archive#windows-app-sdk-18)选择 1.8.12 的 **Installer (x64)**；安装 2.x 不能替代本程序要求的 1.8。通常每台电脑、每个使用账户只需安装一次，后续更新程序无需重复携带运行库。只装 WebView2 不够；缺少匹配运行库时精简版无法启动。
 
 1. 完整解压所选 ZIP 到可写目录。
-2. 双击文件夹内的 `MiniWindow.exe`。保留旁边的 `app/` 和 `docs/` 文件夹，不能只复制 EXE。
+2. 进入 `app/`，双击真正的主程序 `MiniWindow.exe`。保留完整目录，不要只复制 EXE；可自行为它创建桌面快捷方式。发布包不包含额外启动器。
 3. 本版沿用原项目的管理员权限启动策略，会显示 UAC 提示。
 
 构建目标为 Windows 10 2004 或更新版本、x64。需要已安装的 Microsoft Edge WebView2 Runtime；界面仅支持简体中文。完整便携包带有 WinUI 必需的 Windows App SDK 组件；精简版改用已安装的共享运行库。两者均携带原生 VC 运行库，不包含 AI／机器学习／Widgets 组件，也不包含 WebView2 浏览器内核。缺少 WebView2 时程序会报告错误，不自动下载安装。
 
-程序配置保存在 `app/config.winui.ini`，网页资料保存在 `app/data/webview-profile`。升级前先退出旧版本、备份配置及网页资料；不要把自己的资料打进公开分发包。旧版配置迁移方式见[使用说明](docs/validation/winui-redesign.md)。
+程序配置保存在 `app/config.winui.ini`，网页资料保存在 `app/data/webview-profile`。升级前先退出旧版本、备份配置及网页资料；不要把自己的资料打进公开分发包。旧版配置迁移方式见[使用说明](docs/usage.md)。
+
+## 源码目录
+
+- `winui/`：当前 WinUI 3 应用、网页宿主、设置界面和应用层测试。
+- `src/`：当前应用仍在复用的配置、窗口、快捷键和媒体等原生核心。
+- `tests/`：共享核心测试。
+- `assets/`：当前图标资源与生成说明。
+- `tools/`：源码同步、构建及打包工具。
+- `docs/usage.md`：当前使用与构建说明。
+
+旧 Win32 界面工程、弃用资源和开发草稿不再保留在当前目录，需要追溯时查看 Git 历史及上游项目。
 
 ## 构建与验证范围
 
@@ -70,7 +81,7 @@
 # 完整便携版省略 -SharedRuntime
 ```
 
-精简版打包使用 `tools/windows/package_winui.ps1 -SharedRuntime`，完整便携版省略 `-SharedRuntime`；该脚本需要源码同步阶段生成的 `source-manifest.json`，具体流程见[构建说明](docs/validation/winui-redesign.md#从源码构建)。
+精简版打包使用 `tools/windows/package_winui.ps1 -SharedRuntime`，完整便携版省略 `-SharedRuntime`；该脚本需要源码同步阶段生成的 `source-manifest.json`，具体流程见[构建说明](docs/usage.md#从源码构建)。
 
 当前交付执行了代码审查、Release 编译和文件完整性校验。按维护者要求，后期修改没有运行自动测试、截图或桌面自动操作，实际使用验证由维护者进行。早期测试记录不等于当前包已全面通过测试；游戏独占全屏、不同 DPI 和多显示器等场景不能据此宣称兼容。
 

@@ -82,7 +82,6 @@ struct AppSettings {
     int fixedWebZoomPercent = 100;
     bool fixedWebZoomEnabled = false;
     bool autoPauseOnHide = true;
-    bool disableHotkeysOnTyping = true;
     bool useSystemTray = false;
     bool backgroundMediaHotkeys = false;
     bool autoFitVideoFullscreen = false;
@@ -134,7 +133,6 @@ struct Preset {
     int fixedWebZoomPercent = 100;
     bool fixedWebZoomEnabled = false;
     bool autoPauseOnHide = true;
-    bool disableHotkeysOnTyping = true;
     bool useSystemTray = false;
     bool backgroundMediaHotkeys = false;
     bool autoFitVideoFullscreen = false;

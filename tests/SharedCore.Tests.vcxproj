@@ -10,7 +10,7 @@
     <VCProjectVersion>18.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{8f1c2b57-7e65-49df-a3c4-1400b8654f31}</ProjectGuid>
-    <RootNamespace>XiaoChuangTests</RootNamespace>
+    <RootNamespace>MiniWindowSharedCoreTests</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -42,6 +42,7 @@
     </ClCompile>
     <Link><SubSystem>Console</SubSystem></Link>
   </ItemDefinitionGroup>
+  <PropertyGroup><TargetName>SharedCore.Tests</TargetName></PropertyGroup>
   <ItemGroup>
     <ClCompile Include="CoreTests.cpp" />
     <ClCompile Include="..\src\ConfigStore.cpp" />

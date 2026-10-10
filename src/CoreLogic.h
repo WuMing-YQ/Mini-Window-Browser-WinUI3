@@ -3,83 +3,21 @@
 #include "AppModel.h"
 
 #include <cstdint>
-#include <optional>
 #include <string>
 #include <vector>
 
 namespace xiaochuang {
-
-enum class WindowEvent {
-    ToggleMaximize,
-    ToggleImmersion,
-    Hide,
-    Show,
-};
-
-struct WindowStateSnapshot {
-    WindowMode visibleMode = WindowMode::Normal;
-    bool hidden = false;
-};
-
-WindowStateSnapshot ReduceWindowState(WindowStateSnapshot state, WindowEvent event,
-                                      ImmersionStyle immersionStyle);
-
-enum class HoldGestureResult {
-    None,
-    Tap,
-    HoldStart,
-    HoldStop,
-};
-
-class HoldGestureState {
-public:
-    void Press(std::uint64_t nowMilliseconds);
-    HoldGestureResult Tick(std::uint64_t nowMilliseconds);
-    HoldGestureResult Release();
-    void Cancel() noexcept;
-
-private:
-    bool pressed_ = false;
-    bool holding_ = false;
-    std::uint64_t pressedAt_ = 0;
-};
-
-enum class MediaSite {
-    Bilibili,
-    Douyin,
-    YouTube,
-    GenericHtml5,
-};
-
-MediaSite SelectMediaSite(std::wstring host);
-
-struct VideoCandidate {
-    bool playing = false;
-    bool visible = true;
-    double visibleArea = 0;
-    std::uint64_t lastInteraction = 0;
-};
 
 struct MouseButtonTransition {
     UINT virtualKey = 0;
     bool down = false;
 };
 
-std::optional<size_t> SelectActiveVideo(const std::vector<VideoCandidate>& candidates);
 std::vector<MouseButtonTransition> DecodeRawMouseButtons(std::uint16_t buttonFlags);
-bool IsEditableClassName(std::wstring className);
-bool IsLikelyAutomationTextInput(bool semanticTextControl, bool keyboardFocusable,
-                                 bool writableValuePattern, bool textPatternAvailable = false);
-bool ShouldInspectTextInputProcess(bool foregroundIsApplication, bool externalObservationArmed);
-bool ShouldApplyWebTypingGuard(bool webTyping, bool applicationForeground);
 bool ShouldRecoverStaleKeyDown(bool knownDown, bool matchingGesturePending,
                                bool asynchronousKeyDown);
 bool ShouldForceReleaseMessageGesture(std::uint64_t elapsedMilliseconds,
                                       bool asynchronousKeyDown);
-bool IsUsableTextCaret(const RECT& caretRect, const RECT& clientRect,
-                       bool caretOwnsKeyboardFocus);
-bool IsHoleMaskColumnTransparent(int coordinate, int transparencyPercent);
-bool IsSupportedWebNavigationUrl(std::wstring url);
 std::wstring TrimWhitespace(std::wstring value);
 bool HasPresetNameConflict(const std::vector<std::wstring>& names,
                            const std::wstring& candidate, size_t ignoredIndex = SIZE_MAX);
@@ -95,7 +33,5 @@ RECT PositionAspectFitRect(const RECT& currentRect, SIZE targetSize,
                            int edgeThreshold);
 RECT ConstrainAspectSizingRect(RECT proposedRect, UINT sizingEdge, int chromeHeight,
                                double aspectRatio);
-RECT CalculateImmersionRect(const RECT& normalRect, const RECT& monitorRect,
-                            int chromeHeight, int snapThreshold);
 
 } // namespace xiaochuang

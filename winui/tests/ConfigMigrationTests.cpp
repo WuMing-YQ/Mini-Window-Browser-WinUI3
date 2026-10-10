@@ -20,7 +20,7 @@ void ConfigMigrationTests() {
     const auto& preset=state.presets[0];
     CHECK(preset.holeRadius==400 && preset.snapThreshold==27 && preset.holdPlaybackRate==5);
     CHECK(preset.autoHideOpacityPercent==80 && preset.holeOpacityPercent==100 && preset.hoverReductionPercent==100);
-    CHECK(!preset.autoPauseOnHide && !preset.disableHotkeysOnTyping && preset.useSystemTray && preset.backgroundMediaHotkeys);
+    CHECK(!preset.autoPauseOnHide && preset.useSystemTray && preset.backgroundMediaHotkeys);
     CHECK(preset.autoFitVideoFullscreen && preset.lockVideoFullscreenAspect && preset.maximizedTopDragEnabled);
     CHECK(preset.fixedWebZoomEnabled && preset.fixedWebZoomPercent==175);
     CHECK(preset.normalRect.left==-1234 && preset.normalRect.top==70 && preset.normalRect.right==-434 && preset.normalRect.bottom==520 && preset.maximized);

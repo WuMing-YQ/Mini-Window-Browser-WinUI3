@@ -18,11 +18,6 @@ if($ExistingBuildDirectory){$build=[IO.Path]::GetFullPath($ExistingBuildDirector
 }
 $environment=& (Join-Path $SourceDirectory 'tools/windows/doctor_winui.ps1')
 $app=Join-Path $build 'app'
-$launcherOutput=Join-Path $build 'launcher'
-& $environment.MSBuild (Join-Path $SourceDirectory 'winui/launcher/MiniWindow.Launcher.vcxproj') /t:Build /nologo /v:minimal /p:Configuration=Release /p:Platform=x64 "/p:OutDir=$launcherOutput/" "/p:IntDir=$build/obj-launcher/" *> (Join-Path $build 'launcher-build.log')
-if($LASTEXITCODE -ne 0){Get-Content (Join-Path $build 'launcher-build.log') -Tail 18;throw 'Portable launcher build failed.'}
-$launcherExe=Join-Path $launcherOutput 'MiniWindow.exe'
-if(-not(Test-Path $launcherExe)){throw 'Portable launcher EXE missing.'}
 $payload=Join-Path $package 'app'
 $documentation=Join-Path $package 'docs'
 $requiredFiles=@('MiniWindow.exe','MiniWindow.pri')
@@ -32,7 +27,6 @@ New-Item -ItemType Directory -Path $package | Out-Null
 try{
  New-Item -ItemType Directory -Path $payload,$documentation | Out-Null
  Copy-Item (Join-Path $app '*') $payload -Recurse -Force
- Copy-Item $launcherExe (Join-Path $package 'MiniWindow.exe')
  # WinUI copies all MUI languages by default. Only remove language resource files;
  # never remove an arbitrary directory or a runtime DLL by language-like naming.
  foreach($mui in @(Get-ChildItem $payload -Recurse -File -Filter '*.mui')){
@@ -99,9 +93,9 @@ No Flutter, Dart or .NET application runtime is used.
   [void]$combined.AppendLine($group.text)
  }
  [IO.File]::WriteAllText((Join-Path $documentation 'THIRD-PARTY-NOTICES.txt'),$combined.ToString(),[Text.UTF8Encoding]::new($false))
- Copy-Item (Join-Path $SourceDirectory 'docs/validation/winui-redesign.md') (Join-Path $documentation '使用说明.md')
+ Copy-Item (Join-Path $SourceDirectory 'docs/usage.md') (Join-Path $documentation '使用说明.md')
  $readme=Get-Content (Join-Path $SourceDirectory 'README.md') -Raw -Encoding UTF8
- $readme=$readme.Replace('src="assets/MiniWindow.png"','src="docs/assets/MiniWindow.png"').Replace('](LICENSE.txt)','](docs/LICENSE.txt)').Replace('docs/validation/winui-redesign.md','docs/使用说明.md')
+ $readme=$readme.Replace('src="assets/MiniWindow.png"','src="docs/assets/MiniWindow.png"').Replace('](LICENSE.txt)','](docs/LICENSE.txt)').Replace('docs/usage.md','docs/使用说明.md')
  if($SharedRuntime){$readme="# 精简版：需要先安装 Windows App Runtime 1.8.12（x64）`n`n本包不附带 WinUI 运行库。安装说明见下文；仅安装 WebView2 还不够。`n`n"+$readme}
  [IO.File]::WriteAllText((Join-Path $package 'README.md'),$readme,[Text.UTF8Encoding]::new($false))
  $readmeAssets=Join-Path $documentation 'assets'
@@ -117,18 +111,14 @@ No Flutter, Dart or .NET application runtime is used.
  $embedded=Join-Path $build 'embedded.manifest'
  & $mt "-inputresource:$(Join-Path $payload 'MiniWindow.exe');#1" "-out:$embedded" *> (Join-Path $build 'manifest-extract.log')
  if($LASTEXITCODE -ne 0 -or (Get-Content $embedded -Raw) -notmatch 'requireAdministrator'){throw 'Formal EXE does not request administrator privileges.'}
- # Check the launcher has the same elevation policy as the real application.
- $launcherManifest=Join-Path $build 'launcher-embedded.manifest'
- & $mt "-inputresource:$(Join-Path $package 'MiniWindow.exe');#1" "-out:$launcherManifest" *> (Join-Path $build 'launcher-manifest-extract.log')
- if($LASTEXITCODE -ne 0 -or (Get-Content $launcherManifest -Raw) -notmatch 'requireAdministrator'){throw 'Launcher elevation does not match the application.'}
  $rootEntries=@(Get-ChildItem $package | ForEach-Object {$_.Name} | Sort-Object)
- if(($rootEntries -join '|') -ne 'app|docs|MiniWindow.exe|README.md'){throw 'Unexpected files at portable package root.'}
+ if(($rootEntries -join '|') -ne 'app|docs|README.md'){throw 'Unexpected files at portable package root.'}
  $files=@(Get-ChildItem $package -File -Recurse | Sort-Object FullName | ForEach-Object {@{path=$_.FullName.Substring($package.Length+1).Replace('\','/');sha256=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant();bytes=$_.Length}})
- $manifest=[ordered]@{version='2.0.0-winui-preview';configuration='Release';platform='x64';elevation='requireAdministrator';selfContained=(-not $SharedRuntime.IsPresent);windowsAppRuntimePrerequisite=if($SharedRuntime){'Windows App Runtime 1.8.12 x64 (or later 1.8 servicing release)'}else{$null};uiLanguage='zh-CN';entryPoint='MiniWindow.exe';application='app/MiniWindow.exe';sourceSha256=$source.sha256;createdUtc=[DateTime]::UtcNow.ToString('o');dependencies=$dependencies;webView2Runtime=$environment.WebView2;nativeCrt=$redist.Name;automatedTests=if($UserAcceptanceOnly){'not run at user request'}else{'passed'};manualAcceptance='pending user';gameCompatibility='not run';files=$files}
+ $manifest=[ordered]@{version='2.0.0-winui-preview';configuration='Release';platform='x64';elevation='requireAdministrator';selfContained=(-not $SharedRuntime.IsPresent);windowsAppRuntimePrerequisite=if($SharedRuntime){'Windows App Runtime 1.8.12 x64 (or later 1.8 servicing release)'}else{$null};uiLanguage='zh-CN';entryPoint='app/MiniWindow.exe';application='app/MiniWindow.exe';sourceSha256=$source.sha256;createdUtc=[DateTime]::UtcNow.ToString('o');dependencies=$dependencies;webView2Runtime=$environment.WebView2;nativeCrt=$redist.Name;automatedTests=if($UserAcceptanceOnly){'not run at user request'}else{'passed'};manualAcceptance='pending user';gameCompatibility='not run';files=$files}
  $manifest|ConvertTo-Json -Depth 8|Set-Content (Join-Path $documentation 'manifest.json') -Encoding UTF8
  foreach($entry in $files){if((Get-FileHash (Join-Path $package $entry.path) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.sha256){throw ('Package file changed: '+$entry.path)}}
  Compress-Archive -Path $package -DestinationPath $zip -CompressionLevel Optimal
- Write-Output ('WINUI_PACKAGE_EXE='+ (Join-Path $package 'MiniWindow.exe'))
+ Write-Output ('WINUI_PACKAGE_EXE='+ (Join-Path $payload 'MiniWindow.exe'))
  Write-Output ('WINUI_PACKAGE_ZIP='+$zip)
  Write-Output ('WINUI_PACKAGE_SHA256='+(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant())
 }catch{Remove-Item $package -Recurse -Force -ErrorAction SilentlyContinue;Remove-Item $zip -Force -ErrorAction SilentlyContinue;throw}

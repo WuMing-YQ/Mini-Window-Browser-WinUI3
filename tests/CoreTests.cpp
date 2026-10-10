@@ -42,7 +42,7 @@ void TestConfigMigration() {
     xiaochuang::AppState state;
     const xiaochuang::ConfigStore store(path);
     Check(store.Load(state), L"旧配置可加载");
-    Check(state.settings.holeRadius == 0, L"挖孔半径范围校验");
+    Check(state.settings.holeRadius == 10, L"挖孔半径范围校验");
     Check(state.settings.snapThreshold == 200, L"吸附距离范围校验");
     Check(state.settings.holdPlaybackRate == 5, L"长按倍速范围校验");
     Check(state.settings.holeOpacityPercent == 100 &&
@@ -169,82 +169,12 @@ void TestConfigMigration() {
     DeleteFileW(path.c_str());
 }
 
-void TestWindowTransitions() {
+void TestKeyReleaseRecovery() {
     using namespace xiaochuang;
-    WindowStateSnapshot state;
-    state = ReduceWindowState(state, WindowEvent::ToggleMaximize, ImmersionStyle::Hole);
-    Check(state.visibleMode == WindowMode::Maximized, L"普通窗口进入无缝最大化");
-    state = ReduceWindowState(state, WindowEvent::ToggleMaximize, ImmersionStyle::Hole);
-    Check(state.visibleMode == WindowMode::Normal, L"无缝最大化恢复");
-    state = ReduceWindowState(state, WindowEvent::ToggleImmersion, ImmersionStyle::AutoHide);
-    Check(state.visibleMode == WindowMode::ImmersionAutoHide, L"进入整体透明沉浸模式");
-    state = ReduceWindowState(state, WindowEvent::Hide, ImmersionStyle::AutoHide);
-    Check(state.hidden, L"沉浸状态可原子隐藏");
-    state = ReduceWindowState(state, WindowEvent::Show, ImmersionStyle::AutoHide);
-    Check(!state.hidden && state.visibleMode == WindowMode::ImmersionAutoHide, L"显示后恢复可见模式");
-}
-
-void TestHoldGestures() {
-    using namespace xiaochuang;
-    HoldGestureState gesture;
-    gesture.Press(1000);
-    Check(gesture.Tick(1399) == HoldGestureResult::None, L"400ms 前不触发长按");
-    Check(gesture.Release() == HoldGestureResult::Tap, L"短按在松开时触发跳转");
-    gesture.Press(2000);
-    Check(gesture.Tick(2400) == HoldGestureResult::HoldStart, L"400ms 触发长按开始");
-    Check(gesture.Tick(2600) == HoldGestureResult::None, L"长按开始只触发一次");
-    Check(gesture.Release() == HoldGestureResult::HoldStop, L"松开完整恢复长按状态");
-}
-
-void TestInputAndMediaSelection() {
-    using namespace xiaochuang;
-    Check(IsEditableClassName(L"RichEditD2DPT"), L"识别原生富文本输入控件");
-    Check(IsEditableClassName(L"Scintilla"), L"识别代码/聊天输入控件");
-    Check(!IsEditableClassName(L"Chrome_WidgetWin_1"), L"非输入窗口不误判");
-    Check(IsLikelyAutomationTextInput(true, true, true), L"明确可写的 UI Automation 编辑控件触发输入保护");
-    Check(IsLikelyAutomationTextInput(true, true, false, true), L"Electron TextPattern 编辑控件触发输入保护");
-    Check(!IsLikelyAutomationTextInput(true, true, false), L"仅有编辑语义的自绘画布不误判");
-    Check(!IsLikelyAutomationTextInput(false, true, true), L"仅有可写 Value 的渲染表面不误判");
-    Check(!IsLikelyAutomationTextInput(false, true, false, true), L"普通可聚焦网页文档不误判为输入框");
-    Check(!ShouldInspectTextInputProcess(false, false), L"启动时忽略旧外部窗口的遗留输入焦点");
-    Check(ShouldInspectTextInputProcess(false, true), L"新外部焦点事件后启用跨程序输入保护");
-    Check(ShouldInspectTextInputProcess(true, false), L"应用自身输入控件无需等待外部焦点事件");
-    Check(ShouldApplyWebTypingGuard(true, true), L"小窗前台网页输入框触发输入保护");
-    Check(!ShouldApplyWebTypingGuard(true, false), L"小窗失焦后不保留网页输入状态阻断媒体热键");
     Check(ShouldRecoverStaleKeyDown(true, false, false), L"丢失抬起消息后下一次按键可自愈");
     Check(!ShouldRecoverStaleKeyDown(true, true, false), L"有效长按手势不会被重复按下打断");
     Check(ShouldForceReleaseMessageGesture(5000, false), L"消息型长按丢失抬起后超时恢复");
     Check(!ShouldForceReleaseMessageGesture(4999, false), L"有效长按在超时前保持状态");
-    Check(!IsUsableTextCaret(RECT{0, 0, 0, 0}, RECT{0, 0, 800, 600}, true),
-          L"外部窗口零尺寸残留光标不误判为输入");
-    Check(!IsUsableTextCaret(RECT{10, 10, 11, 28}, RECT{0, 0, 800, 600}, false),
-          L"不拥有键盘焦点的光标不触发输入保护");
-    Check(IsUsableTextCaret(RECT{10, 10, 11, 28}, RECT{0, 0, 800, 600}, true),
-          L"焦点窗口内有效文本光标触发输入保护");
-    for (const int transparency : {0, 1, 25, 50, 99, 100}) {
-        int transparentColumns = 0;
-        for (int coordinate = 0; coordinate < 100; ++coordinate) {
-            if (IsHoleMaskColumnTransparent(coordinate, transparency)) ++transparentColumns;
-        }
-        Check(transparentColumns == transparency, L"挖孔像素掩码精确匹配透明度百分比");
-    }
-    Check(IsHoleMaskColumnTransparent(-100, 50) ==
-          IsHoleMaskColumnTransparent(0, 50), L"挖孔掩码支持屏幕外负坐标");
-    Check(IsSupportedWebNavigationUrl(L"https://www.bilibili.com/video"), L"允许 HTTPS 网页地址");
-    Check(IsSupportedWebNavigationUrl(L"ABOUT:BLANK"), L"允许空白页地址");
-    Check(!IsSupportedWebNavigationUrl(L"javascript:alert(1)"), L"拒绝脚本伪协议导航");
-    Check(SelectMediaSite(L"www.bilibili.com") == MediaSite::Bilibili, L"优先选择 Bilibili 适配器");
-    Check(SelectMediaSite(L"www.douyin.com") == MediaSite::Douyin, L"选择抖音适配器");
-    Check(SelectMediaSite(L"youtu.be") == MediaSite::YouTube, L"选择 YouTube 适配器");
-    Check(SelectMediaSite(L"example.com") == MediaSite::GenericHtml5, L"未知网站回退 HTML5");
-
-    const std::vector<VideoCandidate> videos = {
-        {false, true, 800000, 10},
-        {true, true, 300000, 20},
-        {true, false, 2000000, 30},
-    };
-    const auto selected = SelectActiveVideo(videos);
-    Check(selected && *selected == 1, L"活动视频兼顾播放、可见性与面积");
 }
 
 void TestRawMouseButtons() {
@@ -345,15 +275,7 @@ void TestWindowGeometryHelpers() {
     Check(heightDriven.left == 100 && heightDriven.right == 868 &&
           heightDriven.top == 100 && heightDriven.bottom == 600,
           L"全屏拖动上下边缘时保持视频比例");
-    const RECT topSnappedImmersion = CalculateImmersionRect(
-        RECT{0, 0, 1000, 668}, monitor, 68, 20);
-    Check(topSnappedImmersion.left == 0 && topSnappedImmersion.top == 0 &&
-          topSnappedImmersion.right == 1000 && topSnappedImmersion.bottom == 600,
-          L"顶部吸附窗口进入沉浸后内容贴紧显示器顶部");
-    const RECT floatingImmersion = CalculateImmersionRect(
-        RECT{100, 100, 1100, 768}, monitor, 68, 20);
-    Check(floatingImmersion.top == 168 && floatingImmersion.bottom == 768,
-          L"普通位置进入沉浸仍保持网页内容的屏幕位置");
+
 }
 
 void TestScriptResultDecoding() {
@@ -370,9 +292,7 @@ void TestScriptResultDecoding() {
 
 int wmain() {
     TestConfigMigration();
-    TestWindowTransitions();
-    TestHoldGestures();
-    TestInputAndMediaSelection();
+    TestKeyReleaseRecovery();
     TestRawMouseButtons();
     TestMediaBridgeCommands();
     TestPresetNames();

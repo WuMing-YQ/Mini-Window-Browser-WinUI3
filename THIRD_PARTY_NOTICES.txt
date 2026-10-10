@@ -1,22 +1,20 @@
-Mini-Window-Browser v1.4.4 - Third-party notices
-======================================================
+小窗浏览器 · WinUI 3 衍生版 — 第三方依赖说明
 
-Microsoft Edge WebView2 SDK 1.0.4078.44
-Copyright (c) Microsoft Corporation.
-The SDK package is distributed under its included Microsoft software license
-terms and notices. The application redistributes WebView2Loader.dll; the Edge
-WebView2 Runtime is installed separately by Microsoft.
-Project: https://developer.microsoft.com/microsoft-edge/webview2/
-Package license: licenses/WebView2-SDK-LICENSE.txt
-Package notice: licenses/WebView2-SDK-NOTICE.txt
+基于 azurplain/Mini-Window-Browser 修改，原项目许可见 LICENSE.txt。
+原项目：https://github.com/azurplain/Mini-Window-Browser
 
-Microsoft Windows Implementation Library (WIL) 1.0.250325.1
-Copyright (c) Microsoft Corporation.
-Licensed under the MIT License.
-Project: https://github.com/microsoft/wil
-Package license: licenses/WIL-LICENSE.txt
-Package notices: licenses/WIL-ThirdPartyNotices.txt
+当前依赖及精确版本见 winui/packages.config，包括：
+- Microsoft Windows App SDK / WinUI 3 及必需组件
+- Microsoft Edge WebView2 SDK
+- Microsoft Windows Implementation Library (WIL)
+- Microsoft C++/WinRT 与 Windows SDK 构建工具
+这些组件的版权、许可证和第三方声明以各 NuGet 包随附的原文为准。
 
-The v1.4 application icon was generated specifically for this project and does
-not embed third-party trademarks or text. The UI is rendered with Windows
-Direct2D/DirectWrite and does not redistribute WinUI or Windows App SDK files.
+tools/windows/package_winui.ps1 在打包时从依赖包收集原始许可证及声明，
+相同文本仅保存一次，并列出适用来源，写入发布包 docs/THIRD-PARTY-NOTICES.txt。
+原生 Visual C++ Runtime 来自 Visual Studio 的可再发行目录，适用条款见：
+https://visualstudio.microsoft.com/license-terms/
+
+WebView2 Evergreen Runtime 需单独安装，不随包分发或自动下载。
+精简版使用已安装的 Windows App Runtime；完整包携带所需 WinUI 运行库。
+当前图标由 AI 生成，资源及制作说明见 assets/。

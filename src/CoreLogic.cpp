@@ -6,88 +6,6 @@
 
 namespace xiaochuang {
 
-WindowStateSnapshot ReduceWindowState(WindowStateSnapshot state, WindowEvent event,
-                                      ImmersionStyle immersionStyle) {
-    switch (event) {
-    case WindowEvent::Hide:
-        state.hidden = true;
-        break;
-    case WindowEvent::Show:
-        state.hidden = false;
-        break;
-    case WindowEvent::ToggleMaximize:
-        if (state.visibleMode == WindowMode::Normal) state.visibleMode = WindowMode::Maximized;
-        else if (state.visibleMode == WindowMode::Maximized) state.visibleMode = WindowMode::Normal;
-        break;
-    case WindowEvent::ToggleImmersion:
-        if (state.visibleMode == WindowMode::ImmersionHole ||
-            state.visibleMode == WindowMode::ImmersionAutoHide) {
-            state.visibleMode = WindowMode::Normal;
-        } else {
-            state.visibleMode = immersionStyle == ImmersionStyle::Hole
-                ? WindowMode::ImmersionHole : WindowMode::ImmersionAutoHide;
-        }
-        break;
-    }
-    return state;
-}
-
-void HoldGestureState::Press(std::uint64_t nowMilliseconds) {
-    pressed_ = true;
-    holding_ = false;
-    pressedAt_ = nowMilliseconds;
-}
-
-HoldGestureResult HoldGestureState::Tick(std::uint64_t nowMilliseconds) {
-    if (!pressed_ || holding_ || nowMilliseconds - pressedAt_ < 400) return HoldGestureResult::None;
-    holding_ = true;
-    return HoldGestureResult::HoldStart;
-}
-
-HoldGestureResult HoldGestureState::Release() {
-    if (!pressed_) return HoldGestureResult::None;
-    const HoldGestureResult result = holding_ ? HoldGestureResult::HoldStop : HoldGestureResult::Tap;
-    Cancel();
-    return result;
-}
-
-void HoldGestureState::Cancel() noexcept {
-    pressed_ = false;
-    holding_ = false;
-    pressedAt_ = 0;
-}
-
-MediaSite SelectMediaSite(std::wstring host) {
-    std::transform(host.begin(), host.end(), host.begin(),
-        [](wchar_t value) { return static_cast<wchar_t>(std::towlower(value)); });
-    const auto matches = [&](const wchar_t* domain) {
-        const std::wstring value(domain);
-        return host == value || (host.size() > value.size() &&
-            host.ends_with(L"." + value));
-    };
-    if (matches(L"bilibili.com")) return MediaSite::Bilibili;
-    if (matches(L"douyin.com")) return MediaSite::Douyin;
-    if (matches(L"youtube.com") || matches(L"youtu.be")) return MediaSite::YouTube;
-    return MediaSite::GenericHtml5;
-}
-
-std::optional<size_t> SelectActiveVideo(const std::vector<VideoCandidate>& candidates) {
-    std::optional<size_t> selected;
-    long double selectedScore = -1;
-    for (size_t index = 0; index < candidates.size(); ++index) {
-        const VideoCandidate& candidate = candidates[index];
-        if (!candidate.visible || candidate.visibleArea <= 0) continue;
-        const long double score = static_cast<long double>(candidate.visibleArea) +
-            (candidate.playing ? 1.0e12L : 0.0L) +
-            static_cast<long double>(candidate.lastInteraction) * 0.001L;
-        if (!selected || score > selectedScore) {
-            selected = index;
-            selectedScore = score;
-        }
-    }
-    return selected;
-}
-
 std::vector<MouseButtonTransition> DecodeRawMouseButtons(std::uint16_t buttonFlags) {
     std::vector<MouseButtonTransition> transitions;
     if ((buttonFlags & RI_MOUSE_BUTTON_3_DOWN) != 0) transitions.push_back({VK_MBUTTON, true});
@@ -99,35 +17,6 @@ std::vector<MouseButtonTransition> DecodeRawMouseButtons(std::uint16_t buttonFla
     return transitions;
 }
 
-bool IsEditableClassName(std::wstring className) {
-    std::transform(className.begin(), className.end(), className.begin(),
-        [](wchar_t value) { return static_cast<wchar_t>(std::towlower(value)); });
-    return className.find(L"edit") != std::wstring::npos ||
-        className.find(L"richedit") != std::wstring::npos ||
-        className.find(L"scintilla") != std::wstring::npos ||
-        className.find(L"textbox") != std::wstring::npos;
-}
-
-bool IsLikelyAutomationTextInput(bool semanticTextControl, bool keyboardFocusable,
-                                 bool writableValuePattern, bool textPatternAvailable) {
-    // Cross-process UI Automation providers used by Electron/Chromium launchers
-    // sometimes expose their entire render surface as either an Edit control or
-    // a writable Value provider.  Neither signal alone means the user is typing.
-    // Electron/CEF edit controls frequently expose TextPattern instead of a
-    // writable ValuePattern. Keep the semantic and focusability requirements so
-    // an entire Chromium render surface is not mistaken for an input control.
-    return semanticTextControl && keyboardFocusable &&
-        (writableValuePattern || textPatternAvailable);
-}
-
-bool ShouldInspectTextInputProcess(bool foregroundIsApplication, bool externalObservationArmed) {
-    return foregroundIsApplication || externalObservationArmed;
-}
-
-bool ShouldApplyWebTypingGuard(bool webTyping, bool applicationForeground) {
-    return webTyping && applicationForeground;
-}
-
 bool ShouldRecoverStaleKeyDown(bool knownDown, bool matchingGesturePending,
                                bool asynchronousKeyDown) {
     return knownDown && !matchingGesturePending && !asynchronousKeyDown;
@@ -136,23 +25,6 @@ bool ShouldRecoverStaleKeyDown(bool knownDown, bool matchingGesturePending,
 bool ShouldForceReleaseMessageGesture(std::uint64_t elapsedMilliseconds,
                                       bool asynchronousKeyDown) {
     return elapsedMilliseconds >= 5000 && !asynchronousKeyDown;
-}
-
-bool IsUsableTextCaret(const RECT& caretRect, const RECT& clientRect,
-                       bool caretOwnsKeyboardFocus) {
-    if (!caretOwnsKeyboardFocus || caretRect.bottom <= caretRect.top) return false;
-    if (clientRect.right <= clientRect.left || clientRect.bottom <= clientRect.top) return false;
-    return caretRect.left >= clientRect.left && caretRect.left <= clientRect.right &&
-        caretRect.right >= clientRect.left && caretRect.right <= clientRect.right &&
-        caretRect.top >= clientRect.top && caretRect.bottom <= clientRect.bottom;
-}
-
-bool IsHoleMaskColumnTransparent(int coordinate, int transparencyPercent) {
-    transparencyPercent = std::clamp(transparencyPercent, 0, 100);
-    if (transparencyPercent == 0) return false;
-    if (transparencyPercent == 100) return true;
-    const int normalized = ((coordinate % 100) + 100) % 100;
-    return (normalized * 37) % 100 < transparencyPercent;
 }
 
 std::wstring TrimWhitespace(std::wstring value) {
@@ -281,27 +153,6 @@ RECT ConstrainAspectSizingRect(RECT proposedRect, UINT sizingEdge, int chromeHei
         else proposedRect.bottom = proposedRect.top + height;
     }
     return proposedRect;
-}
-
-bool IsSupportedWebNavigationUrl(std::wstring url) {
-    std::transform(url.begin(), url.end(), url.begin(),
-        [](wchar_t value) { return static_cast<wchar_t>(std::towlower(value)); });
-    return url.starts_with(L"https://") || url.starts_with(L"http://") ||
-        url.starts_with(L"file://") || url == L"about:blank";
-}
-
-RECT CalculateImmersionRect(const RECT& normalRect, const RECT& monitorRect,
-                            int chromeHeight, int snapThreshold) {
-    const int width = std::max(1, static_cast<int>(normalRect.right - normalRect.left));
-    const int height = std::max(1,
-        static_cast<int>(normalRect.bottom - normalRect.top) - std::max(0, chromeHeight));
-    int top = normalRect.top + std::max(0, chromeHeight);
-    if (std::abs(normalRect.top - monitorRect.top) <= std::max(0, snapThreshold)) {
-        // When the normal window is attached to the physical top edge, removing
-        // its chrome must pull the remaining WebView up instead of leaving a gap.
-        top = monitorRect.top;
-    }
-    return RECT{normalRect.left, top, normalRect.left + width, top + height};
 }
 
 } // namespace xiaochuang

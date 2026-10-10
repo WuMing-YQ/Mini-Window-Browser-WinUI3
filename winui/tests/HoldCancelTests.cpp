@@ -1,10 +1,7 @@
 #include "Test.h"
 #include "../input/InputService.h"
-#include "../../src/CoreLogic.h"
 void HoldCancelTests() {
     using namespace xiaochuang;
-    HoldGestureState oldGesture;oldGesture.Press(1000);
-    CHECK(oldGesture.Tick(1399)==HoldGestureResult::None);CHECK(oldGesture.Tick(1400)==HoldGestureResult::HoldStart);
     miniwindow::AppState state;std::vector<HotkeyGesture> gestures;
     miniwindow::InputService service(nullptr,state,[&](auto,auto gesture){gestures.push_back(gesture);});
     auto hold=[&]{service.Dispatch(HotkeyAction::SeekForward,HotkeyGesture::HoldStart);};

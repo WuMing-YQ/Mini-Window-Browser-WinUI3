@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([ValidateSet('Debug','Release')][string]$Configuration='Release',[ValidateSet('x64')][string]$Platform='x64',[switch]$TestsOnly,[string]$OutputRoot,[switch]$SmokeTestAsInvoker,[switch]$BuildOnly,[switch]$SharedRuntime)
+param([ValidateSet('Debug','Release')][string]$Configuration='Release',[ValidateSet('x64')][string]$Platform='x64',[switch]$TestsOnly,[string]$OutputRoot,[switch]$BuildOnly,[switch]$SharedRuntime)
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)
@@ -18,9 +18,8 @@ function Build([string]$label,[string]$project,[string]$target,[string]$out,[str
 }
 if(-not $TestsOnly){
  Build 'restore' (Join-Path $root 'winui\MiniWindow.slnx') 'Restore' 'app' @('/p:RestorePackagesConfig=true',"/p:RestoreRepositoryPath=$root\winui\packages")
- Build 'winui' (Join-Path $root 'winui\MiniWindow.vcxproj') 'Rebuild' 'app' @("/p:SmokeTestAsInvoker=$($SmokeTestAsInvoker.IsPresent.ToString().ToLowerInvariant())")
+ Build 'winui' (Join-Path $root 'winui\MiniWindow.vcxproj') 'Rebuild' 'app'
  if(-not(Test-Path (Join-Path $OutputRoot 'app\MiniWindow.exe'))){throw 'WinUI EXE missing after build.'}
- Build 'launcher' (Join-Path $root 'winui\launcher\MiniWindow.Launcher.vcxproj') 'Build' 'launcher'
  Write-Output 'WINUI_BUILD_OK'
 }
 if($BuildOnly){Write-Output 'WINUI_TESTS_NOT_RUN_USER_ACCEPTANCE';return}
@@ -31,7 +30,7 @@ if(Test-Path $tests){
  if($LASTEXITCODE -ne 0){throw 'WinUI core tests failed.'}
  Write-Output 'WINUI_CORE_TESTS_OK'
 } elseif($TestsOnly){throw 'WinUI core test project not implemented yet.'}
-Build 'legacy-tests' (Join-Path $root 'tests\XiaoChuang.Tests.vcxproj') 'Rebuild' 'legacy-tests'
-& (Join-Path $OutputRoot 'legacy-tests\XiaoChuang.Tests.exe')
-if($LASTEXITCODE -ne 0){throw 'Legacy core tests failed.'}
-Write-Output 'LEGACY_CORE_TESTS_OK'
+Build 'shared-core-tests' (Join-Path $root 'tests\SharedCore.Tests.vcxproj') 'Rebuild' 'shared-core-tests'
+& (Join-Path $OutputRoot 'shared-core-tests\SharedCore.Tests.exe')
+if($LASTEXITCODE -ne 0){throw 'Shared core tests failed.'}
+Write-Output 'SHARED_CORE_TESTS_OK'
