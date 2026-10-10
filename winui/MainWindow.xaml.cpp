@@ -15,6 +15,7 @@
 #include <winrt/Windows.System.h>
 #include <winrt/Microsoft.UI.Input.h>
 #include <cmath>
+#include <fstream>
 #include <cwctype>
 #include <winrt/Microsoft.UI.Windowing.h>
 namespace winrt::MiniWindow::implementation {
@@ -273,8 +274,25 @@ Windows::Foundation::IAsyncAction MainWindow::ApplyPresetAsync(std::wstring name
 void MainWindow::ShowTabMenu(){Microsoft::UI::Xaml::Controls::MenuFlyout flyout;for(size_t i=0;i<state_.tabs.size();++i)flyout.Items().Append(MenuCommand((static_cast<int>(i)==state_.currentTabIndex?L"● ":L"")+state_.tabs[i].title,[weak=get_weak(),i]{if(auto self=weak.get())self->coordinator_->SelectTab(i);}));flyout.Items().Append(Microsoft::UI::Xaml::Controls::MenuFlyoutSeparator());flyout.Items().Append(MenuCommand(L"新建标签",[weak=get_weak()]{if(auto self=weak.get())self->coordinator_->AddTab(self->state_.settings.homeUrl);}));flyout.Items().Append(MenuCommand(L"关闭当前标签",[weak=get_weak()]{if(auto self=weak.get())self->coordinator_->CloseTab(static_cast<size_t>(self->state_.currentTabIndex));}));flyout.Items().Append(MenuCommand(L"关闭其他标签",[weak=get_weak()]{if(auto self=weak.get())self->coordinator_->CloseOtherTabs(static_cast<size_t>(self->state_.currentTabIndex));}));flyout.Items().Append(MenuCommand(L"关闭全部标签",[weak=get_weak()]{if(auto self=weak.get())self->coordinator_->CloseAllTabs();}));flyout.ShowAt(TabMenuButton());}
 
 void MainWindow::OpenManagement(miniwindow::ManagementPage page){
-    if(!management_){management_=make_self<ManagementWindow>();management_->Bind(hwnd_,*coordinator_,[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_)self->RefreshOwnedFocus();},[weak=get_weak()](UINT key,UINT modifiers){if(auto self=weak.get();self&&!self->closed_)return self->input_->CaptureKey(key,modifiers);return false;},[weak=get_weak()](auto action){if(auto self=weak.get();self&&!self->closed_)self->input_->BeginCapture(action);},[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_)self->OpenImmersionPanel();},[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_&&self->input_)self->input_->CancelCapture();});}
-    input_->CancelGesture();management_->Open(page);
+    com_ptr<ManagementWindow> candidate;
+    const char* stage="create management window";
+    try {
+        if(!management_){
+            candidate=make_self<ManagementWindow>();
+            stage="bind management pages";
+            candidate->Bind(hwnd_,*coordinator_,[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_)self->RefreshOwnedFocus();},[weak=get_weak()](UINT key,UINT modifiers){if(auto self=weak.get();self&&!self->closed_)return self->input_->CaptureKey(key,modifiers);return false;},[weak=get_weak()](auto action){if(auto self=weak.get();self&&!self->closed_)self->input_->BeginCapture(action);},[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_)self->OpenImmersionPanel();},[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_&&self->input_)self->input_->CancelCapture();});
+            // Binding can publish input status. Expose the window only once every page is ready.
+            management_=std::move(candidate);
+        }
+        stage="open management page";
+        input_->CancelGesture();management_->Open(page);
+    }catch(const hresult_error& error){
+        if(candidate){try{candidate->Shutdown();}catch(const hresult_error&){}}
+        std::ofstream log(directory_/L"management-error.log",std::ios::app);
+        log<<stage<<" HRESULT=0x"<<std::hex<<static_cast<uint32_t>(error.code().value)
+           <<" "<<winrt::to_string(error.message())<<"\n";
+        ShowError(L"设置与管理窗口打开失败："+std::wstring(error.message()));
+    }
 }
 void MainWindow::OpenImmersionPanel(){
  if(!immersionPanel_){immersionPanel_=make_self<ImmersionPanel>();immersionPanel_->Bind(hwnd_,*coordinator_,[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_)self->RefreshOwnedFocus();},[weak=get_weak()](UINT key,UINT modifiers){if(auto self=weak.get();self&&!self->closed_)return self->input_->CaptureKey(key,modifiers);return false;});windowService_->SetCursorExclusion([weak=get_weak()](POINT point){if(auto self=weak.get();self&&self->immersionPanel_)return self->immersionPanel_->ContainsScreenPoint(point);return false;});}

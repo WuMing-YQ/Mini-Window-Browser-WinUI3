@@ -3,13 +3,13 @@
 <NavigationView x:Name="Navigation" IsSettingsVisible="False" PaneDisplayMode="Left" IsBackButtonVisible="Collapsed" OpenPaneLength="190" IsPaneToggleButtonVisible="False" AlwaysShowHeader="False">
 <NavigationView.PaneHeader><StackPanel Margin="16,20,12,20" Spacing="4"><TextBlock Text="小窗浏览器" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="设置与管理" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12"/></StackPanel></NavigationView.PaneHeader>
 <NavigationView.MenuItems>
-<NavigationViewItem Content="窗口与行为" Tag="2" Icon="ViewAll"/>
-<NavigationViewItem Content="沉浸" Tag="3" Icon="FullScreen"/>
-<NavigationViewItem Content="网页与媒体" Tag="4" Icon="Globe"/>
-<NavigationViewItem Content="快捷键" Tag="5" Icon="Keyboard"/>
-<NavigationViewItem Content="外观" Tag="6" Icon="Personalize"/>
-<NavigationViewItem Content="诊断与关于" Tag="7" Icon="Help"/>
+<NavigationViewItem Content="窗口与行为" Tag="2" x:Name="WindowItem"/>
+<NavigationViewItem Content="沉浸" Tag="3" x:Name="ImmersionItem"/>
+<NavigationViewItem Content="网页与媒体" Tag="4" x:Name="WebItem"/>
+<NavigationViewItem Content="快捷键" Tag="5" x:Name="HotkeysItem"/>
+<NavigationViewItem Content="外观" Tag="6" x:Name="AppearanceItem"/>
+<NavigationViewItem Content="诊断与关于" Tag="7" x:Name="DiagnosticsItem"/>
 </NavigationView.MenuItems>
-<NavigationView.FooterMenuItems><NavigationViewItem Content="管理书签" Tag="0" Icon="Favorite"/><NavigationViewItem Content="管理预设" Tag="1" Icon="Save"/></NavigationView.FooterMenuItems>
+<NavigationView.FooterMenuItems><NavigationViewItem Content="管理书签" Tag="0" x:Name="BookmarksItem"/><NavigationViewItem Content="管理预设" Tag="1" x:Name="PresetsItem"/></NavigationView.FooterMenuItems>
 <Border Margin="0,8,8,8" CornerRadius="12" Background="{ThemeResource LayerFillColorDefaultBrush}"><ContentControl x:Name="PageHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/></Border>
 </NavigationView></Grid></Window>

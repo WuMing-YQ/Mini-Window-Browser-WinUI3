@@ -10,6 +10,6 @@ struct ManagementWindow:ManagementWindowT<ManagementWindow>{
  Windows::Foundation::IAsyncOperation<bool> CanLeaveAsync();
 private:Windows::Foundation::IAsyncAction NavigateAsync(miniwindow::ManagementPage,int category=-1);Windows::Foundation::IAsyncAction HideAsync();void SetPage(miniwindow::ManagementPage,int category=-1);void SyncNavigation();
  std::function<void()> cancelCapture_;
- miniwindow::AppCoordinator* app_=nullptr;com_ptr<BookmarkPage> bookmarks_;com_ptr<PresetPage> presets_;com_ptr<SettingsPage> settings_;miniwindow::ManagementPage page_=miniwindow::ManagementPage::Bookmarks;HWND hwnd_=nullptr;bool syncing_=false,pending_=false,shuttingDown_=false;
+ miniwindow::AppCoordinator* app_=nullptr;com_ptr<BookmarkPage> bookmarks_;com_ptr<PresetPage> presets_;com_ptr<SettingsPage> settings_;miniwindow::ManagementPage page_=miniwindow::ManagementPage::Bookmarks;HWND hwnd_=nullptr;bool ready_=false,syncing_=false,pending_=false,shuttingDown_=false;
 };}
 namespace winrt::MiniWindow::factory_implementation{struct ManagementWindow:ManagementWindowT<ManagementWindow,implementation::ManagementWindow>{};}
