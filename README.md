@@ -12,13 +12,15 @@
 
 原项目及其已有贡献的署名与许可证保留。本版的修改、说明及交付由本版维护者负责，不代表原作者发布、审核或认可了这些改动。本版问题请向提供本版的人反馈，避免把本版新增的问题归到原项目。
 
-- [原项目主页与源码](https://github.com/azurplain/Mini-Window-Browser)
-- [原项目发行页面](https://github.com/azurplain/Mini-Window-Browser/releases)（这里下载的是原项目版本）
-- [原项目最新说明](https://github.com/azurplain/Mini-Window-Browser#readme)（直接查看上游，不保留可能过时的本地副本）
-- [当前版使用说明与验证范围](docs/usage.md)
+## 界面预览
 
-- [当前衍生版仓库](https://github.com/WuMing-YQ/Mini-Window-Browser-WinUI3)
-- [当前衍生版下载与更新说明](https://github.com/WuMing-YQ/Mini-Window-Browser-WinUI3/releases)
+主窗口
+
+<img src="https://raw.githubusercontent.com/WuMing-YQ/Mini-Window-Browser-WinUI3/main/docs/images/main-window.png" width="960" alt="小窗浏览器主窗口，显示标签栏、地址栏与网页内容">
+
+沉浸设置
+
+<img src="https://raw.githubusercontent.com/WuMing-YQ/Mini-Window-Browser-WinUI3/main/docs/images/immersion-settings.png" width="960" alt="沉浸设置页面，提供显示方式、不透明度、移入减淡比例与挖孔半径滑动条">
 
 ## 致谢
 
@@ -49,7 +51,7 @@
 
 ## 便携运行
 
-当前 Release 提供 `MiniWindow-WinUI3-x64-Lite.zip` 精简便携包，不附带 WinUI 运行库。对应构建源码为 `MiniWindow-WinUI3-Lite-Source.zip`，文件校验值见 `MiniWindow-Lite-SHA256.txt`。构建脚本仍支持自行生成携带运行库的完整便携包。
+当前 [Release](https://github.com/WuMing-YQ/Mini-Window-Browser-WinUI3/releases) 提供 `MiniWindow-WinUI3-x64-Lite.zip` 精简便携包，不附带 WinUI 运行库。对应构建源码为 `MiniWindow-WinUI3-Lite-Source.zip`，文件校验值见 `MiniWindow-Lite-SHA256.txt`。构建脚本仍支持自行生成携带运行库的完整便携包。
 
 **精简版首次使用前，需安装 Windows App Runtime 1.8.12（x64），或更新的 1.8 修订版。** 从[微软官方下载页](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads-archive#windows-app-sdk-18)选择 1.8.12 的 **Installer (x64)**；安装 2.x 不能替代本程序要求的 1.8。通常每台电脑、每个使用账户只需安装一次，后续更新程序无需重复携带运行库。只装 WebView2 不够；缺少匹配运行库时精简版无法启动。
 
