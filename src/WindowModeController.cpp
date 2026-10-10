@@ -333,12 +333,12 @@ void WindowModeController::RefreshVisualState() {
 
 void WindowModeController::RefreshFrameAppearance() const {
     if (!window_) return;
-    const bool normalFrame = visibleMode_ == WindowMode::Normal && !IsImmersive();
+    const bool normalFrame = !IsImmersive();
     const DWMNCRENDERINGPOLICY nonClientPolicy = normalFrame
         ? DWMNCRP_ENABLED : DWMNCRP_DISABLED;
     DwmSetWindowAttribute(window_, DWMWA_NCRENDERING_POLICY,
                           &nonClientPolicy, sizeof(nonClientPolicy));
-    const DWM_WINDOW_CORNER_PREFERENCE corners = normalFrame
+    const DWM_WINDOW_CORNER_PREFERENCE corners = visibleMode_ == WindowMode::Normal
         ? DWMWCP_ROUND : DWMWCP_DONOTROUND;
     DwmSetWindowAttribute(window_, DWMWA_WINDOW_CORNER_PREFERENCE, &corners, sizeof(corners));
     DwmSetWindowAttribute(window_, kDwmBorderColorAttribute,
@@ -367,7 +367,8 @@ void WindowModeController::ApplyVisibleMode(WindowMode mode, bool restoreGeometr
     KillTimer(window_, kImmersionTimerId);
     if (frameHandler_) frameHandler_(mode);
     const DWORD baseExStyle = WS_EX_TOPMOST | (systemTray_ ? WS_EX_TOOLWINDOW : WS_EX_APPWINDOW);
-    const DWORD style = mode == WindowMode::Normal ? kNormalStyle : kPopupStyle;
+    const DWORD style = immersive ? kPopupStyle :
+        kNormalStyle | (mode == WindowMode::Maximized ? WS_MAXIMIZE : 0U);
     const DWORD exStyle = immersive
         ? baseExStyle | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE
         : baseExStyle;

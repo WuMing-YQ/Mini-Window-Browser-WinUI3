@@ -32,6 +32,15 @@ bool IsImeClassName(std::wstring className) {
         className.find(L"cicero") != std::wstring::npos;
 }
 
+// Terminal windows are keyboard-input surfaces even without an exposed caret.
+// Recognize their public window class without asking a cross-process UIA provider.
+bool IsTerminalWindow(HWND window) {
+    wchar_t name[128]{};
+    if (!window || !GetClassNameW(window, name, static_cast<int>(std::size(name)))) return false;
+    return _wcsicmp(name, L"CASCADIA_HOSTING_WINDOW_CLASS") == 0 ||
+           _wcsicmp(name, L"ConsoleWindowClass") == 0;
+}
+
 std::optional<DWORD> ProcessIntegrityLevel(DWORD processId) {
     HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId);
     if (!process) return std::nullopt;
@@ -283,6 +292,10 @@ bool InputGuard::DetectSystemTextInput() {
         GetClassNameW(focusedWindow, className, static_cast<int>(std::size(className)));
         return focusedWindow == nativeEdit_ || IsEditableClassName(className);
     }
+    if (IsTerminalWindow(foreground)) {
+        statusText_ = L"终端输入保护（窗口类型识别，不查询 UI Automation）";
+        return true;
+    }
     if (!ShouldInspectTextInputProcess(false, externalObservationArmed_)) return false;
 
     GUITHREADINFO info{sizeof(info)};
@@ -368,6 +381,10 @@ DWORD WINAPI InputGuard::WorkerThreadProc(void* context) {
             request = state->request;
             ResetEvent(state->requestEvent);
         }
+        // Drop stale requests before asking the global focus provider. A terminal
+        // is handled by the local window-class path, including focus switches
+        // while an older request was queued.
+        if (GetForegroundWindow() != request.foreground || IsTerminalWindow(request.foreground)) continue;
         const ULONGLONG started = GetTickCount64();
         DWORD automationProcessId = 0;
         HWND automationWindow = nullptr;

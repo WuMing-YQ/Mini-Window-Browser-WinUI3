@@ -60,7 +60,7 @@ MainWindow::MainWindow() {
     Root().PreviewKeyDown([weak=get_weak()](auto&&,Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& args){if(auto self=weak.get();self&&!self->closed_&&self->input_&&self->input_->CaptureKey(static_cast<UINT>(args.Key()),miniwindow::CurrentKeyModifiers()))args.Handled(true);});
     input_->SetCaptureHandler([weak=get_weak()](auto action,auto binding){if(auto self=weak.get();self&&!self->closed_)self->coordinator_->UpdateHotkey(action,binding);});
     coordinator_->SetHotkeyValidator([weak=get_weak()](auto action,const auto& binding){if(auto self=weak.get();self&&!self->closed_)return self->input_->ValidateBinding(action,binding);return miniwindow::OperationResult{false,L"窗口已关闭。"};});
-    input_->SetWheelHandler([weak=get_weak()](int steps)->miniwindow::OperationResult{if(auto self=weak.get();self&&!self->closed_){RECT current{};MONITORINFO monitor{sizeof(monitor)};if(!GetWindowRect(self->hwnd_,&current)||!GetMonitorInfoW(MonitorFromWindow(self->hwnd_,MONITOR_DEFAULTTONEAREST),&monitor))return {false,L"无法读取窗口工作区。"};const auto dpi=GetDpiForWindow(self->hwnd_);const auto target=miniwindow::ResizeWindowBySteps(current,steps,monitor.rcWork,{MulDiv(160,dpi,96),MulDiv(120,dpi,96)});return self->windowService_->ResizeNormal(target);}return {false,L"窗口已关闭。"};});
+    input_->SetWheelHandler([weak=get_weak()](int steps)->miniwindow::OperationResult{if(auto self=weak.get();self&&!self->closed_){RECT current{};MONITORINFO monitor{sizeof(monitor)};if(!GetWindowRect(self->hwnd_,&current)||!GetMonitorInfoW(MonitorFromWindow(self->hwnd_,MONITOR_DEFAULTTONEAREST),&monitor))return {false,L"无法读取窗口工作区。"};const auto dpi=GetDpiForWindow(self->hwnd_);const auto target=miniwindow::ResizeWindowBySteps(current,steps,monitor.rcWork,{MulDiv(160,dpi,96),MulDiv(120,dpi,96)},self->state_.settings.snapThreshold);return self->windowService_->ResizeNormal(target);}return {false,L"窗口已关闭。"};});
     Root().AddHandler(Microsoft::UI::Xaml::UIElement::PointerWheelChangedEvent(),box_value(Microsoft::UI::Xaml::Input::PointerEventHandler([weak=get_weak()](auto&&,Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args){if(auto self=weak.get();self&&!self->closed_){const auto point=args.GetCurrentPoint(self->Root());if(!point.Properties().IsHorizontalMouseWheel()&&self->input_->TryHandleWheel(point.Properties().MouseWheelDelta(),miniwindow::CurrentKeyModifiers()))args.Handled(true);}})),true);
     input_->Start();
     Root().Loaded([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get();self&&!self->closed_)self->StartBrowser();});
@@ -134,7 +134,7 @@ void MainWindow::RetryClick(Windows::Foundation::IInspectable const&,Microsoft::
 void MainWindow::WebSlotSizeChanged(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::SizeChangedEventArgs const&) {LayoutBrowser();}
 void MainWindow::ApplyFrame(miniwindow::WindowMode mode) {
     if(mode==miniwindow::WindowMode::Hidden)return;
-    const bool normal=mode==miniwindow::WindowMode::Normal;
+    const bool normal=mode==miniwindow::WindowMode::Normal||mode==miniwindow::WindowMode::Maximized;
     const auto presenter=AppWindow().Presenter().as<Microsoft::UI::Windowing::OverlappedPresenter>();
     ExtendsContentIntoTitleBar(false);SetTitleBar(nullptr);presenter.SetBorderAndTitleBar(normal,normal);
     miniwindow::ThemeSync::Apply(hwnd_,state_.settings.themeMode,Root(),AppWindow());
@@ -197,7 +197,6 @@ void MainWindow::InitializeChrome(){
     auto settings=[weak=get_weak()](auto&&,auto&&){if(auto self=weak.get())self->OpenManagement(miniwindow::ManagementPage::Settings);};
     SettingsButton().Click(settings);ErrorSettingsButton().Click(settings);
     TabMenuButton().Click([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get())self->ShowTabMenu();});
-    MoreButton().Click([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get())self->ShowMoreMenu();});
     Root().SizeChanged([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get()){self->UpdateChromeLayout();self->LayoutBrowser();}});
     RenderSnapshot(coordinator_->Snapshot());
 }
@@ -225,13 +224,18 @@ void MainWindow::RenderSnapshot(const miniwindow::AppSnapshot& snapshot){
     if(management_)management_->Refresh();if(immersionPanel_)immersionPanel_->Refresh();UpdateChromeLayout();
 }
 void MainWindow::UpdateChromeLayout(){
-    const auto layout=miniwindow::CalculateChromeLayout(Root().ActualWidth());using Visibility=Microsoft::UI::Xaml::Visibility;
-    const bool full=layout==miniwindow::ChromeLayout::Full,wide=full||layout==miniwindow::ChromeLayout::Compact;
-    for(auto const& element:{StarButton(),BookmarksButton(),PresetsButton()})element.Visibility(full?Visibility::Visible:Visibility::Collapsed);
-    SettingsButton().Visibility(Visibility::Visible);
-    BackButton().Visibility(wide?Visibility::Visible:Visibility::Collapsed);RefreshButton().Visibility(wide?Visibility::Visible:Visibility::Collapsed);
-    Tabs().Visibility(wide?Visibility::Visible:Visibility::Collapsed);TabMenuButton().Visibility(wide?Visibility::Collapsed:Visibility::Visible);
-    StatusText().Visibility(full&&!state_.immersionActive&&!state_.windowHidden&&Root().ActualHeight()>=240?Visibility::Visible:Visibility::Collapsed);
+    using namespace Microsoft::UI::Xaml;using Controls::Grid;
+    const double width=Root().ActualWidth();
+    const bool stacked=width<400,tiny=width<200;
+    // The address gets the remaining width. Small windows wrap the same
+    // controls to additional rows instead of hiding them in an overflow menu.
+    Grid::SetRow(AddressField(),0);Grid::SetColumn(AddressField(),stacked?0:1);Grid::SetColumnSpan(AddressField(),stacked?3:1);
+    Grid::SetRow(NavigationButtons(),stacked?1:0);Grid::SetColumn(NavigationButtons(),0);
+    Grid::SetRow(ActionButtons(),tiny?2:stacked?1:0);Grid::SetColumn(ActionButtons(),tiny?0:2);Grid::SetColumnSpan(ActionButtons(),tiny?3:1);
+    ActionButtons().HorizontalAlignment(tiny?HorizontalAlignment::Left:HorizontalAlignment::Right);
+    const bool tabs=width>=260;
+    Tabs().Visibility(tabs?Visibility::Visible:Visibility::Collapsed);TabMenuButton().Visibility(tabs?Visibility::Collapsed:Visibility::Visible);
+    StatusText().Visibility(width>=600&&!state_.immersionActive&&!state_.windowHidden&&Root().ActualHeight()>=240?Visibility::Visible:Visibility::Collapsed);
     StatusText().Text(state_.settings.windowWheelEnabled?L"普通浏览  ·  "+miniwindow::WheelModifierLabel(state_.settings.windowWheelModifiers)+L"+滚轮调整窗口大小":L"普通浏览");
 }
 void MainWindow::FillBookmarkMenu(Windows::Foundation::Collections::IVector<Microsoft::UI::Xaml::Controls::MenuFlyoutItemBase> const& items){
@@ -267,18 +271,7 @@ Windows::Foundation::IAsyncAction MainWindow::ApplyPresetAsync(std::wstring name
     }catch(const hresult_error& error){ShowError(std::wstring(error.message()));}
 }
 void MainWindow::ShowTabMenu(){Microsoft::UI::Xaml::Controls::MenuFlyout flyout;for(size_t i=0;i<state_.tabs.size();++i)flyout.Items().Append(MenuCommand((static_cast<int>(i)==state_.currentTabIndex?L"● ":L"")+state_.tabs[i].title,[weak=get_weak(),i]{if(auto self=weak.get())self->coordinator_->SelectTab(i);}));flyout.Items().Append(Microsoft::UI::Xaml::Controls::MenuFlyoutSeparator());flyout.Items().Append(MenuCommand(L"新建标签",[weak=get_weak()]{if(auto self=weak.get())self->coordinator_->AddTab(self->state_.settings.homeUrl);}));flyout.Items().Append(MenuCommand(L"关闭当前标签",[weak=get_weak()]{if(auto self=weak.get())self->coordinator_->CloseTab(static_cast<size_t>(self->state_.currentTabIndex));}));flyout.Items().Append(MenuCommand(L"关闭其他标签",[weak=get_weak()]{if(auto self=weak.get())self->coordinator_->CloseOtherTabs(static_cast<size_t>(self->state_.currentTabIndex));}));flyout.Items().Append(MenuCommand(L"关闭全部标签",[weak=get_weak()]{if(auto self=weak.get())self->coordinator_->CloseAllTabs();}));flyout.ShowAt(TabMenuButton());}
-void MainWindow::ShowMoreMenu(){
-    Microsoft::UI::Xaml::Controls::MenuFlyout flyout;auto items=flyout.Items();
-    items.Append(MenuCommand(L"后退",[weak=get_weak()]{if(auto self=weak.get();self&&self->browser_)self->browser_->GoBack();},browser_&&browser_->CanGoBack()));
-    items.Append(MenuCommand(L"刷新 / 停止",[weak=get_weak()]{if(auto self=weak.get();self&&self->browser_)self->browser_->RefreshOrStop();}));
-    items.Append(MenuCommand(L"收藏当前网页",[weak=get_weak()]{if(auto self=weak.get())self->ToggleBookmarkAsync();}));
-    Microsoft::UI::Xaml::Controls::MenuFlyoutSubItem bookmarks;bookmarks.Text(L"书签");FillBookmarkMenu(bookmarks.Items());items.Append(bookmarks);
-    Microsoft::UI::Xaml::Controls::MenuFlyoutSubItem presets;presets.Text(L"场景预设");FillPresetMenu(presets.Items());items.Append(presets);
-    items.Append(MenuCommand(L"恢复普通模式",[weak=get_weak()]{if(auto self=weak.get()){self->coordinator_->RestoreNormal();self->SyncWindowState();}}));
-    items.Append(MenuCommand(L"隐藏窗口",[weak=get_weak()]{if(auto self=weak.get())self->HideClick(nullptr,nullptr);}));
-    items.Append(MenuCommand(L"最小化",[weak=get_weak()]{if(auto self=weak.get())ShowWindow(self->hwnd_,SW_MINIMIZE);}));
-    items.Append(MenuCommand(L"退出",[weak=get_weak()]{if(auto self=weak.get())self->Close();}));flyout.ShowAt(MoreButton());
-}
+
 void MainWindow::OpenManagement(miniwindow::ManagementPage page){
     if(!management_){management_=make_self<ManagementWindow>();management_->Bind(hwnd_,*coordinator_,[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_)self->RefreshOwnedFocus();},[weak=get_weak()](UINT key,UINT modifiers){if(auto self=weak.get();self&&!self->closed_)return self->input_->CaptureKey(key,modifiers);return false;},[weak=get_weak()](auto action){if(auto self=weak.get();self&&!self->closed_)self->input_->BeginCapture(action);},[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_)self->OpenImmersionPanel();},[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_&&self->input_)self->input_->CancelCapture();});}
     input_->CancelGesture();management_->Open(page);

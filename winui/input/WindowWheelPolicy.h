@@ -11,6 +11,6 @@ class WindowWheelAccumulator {
 public: int Add(int delta);void Reset(){remainder_=0;}
 private: int remainder_=0;
 };
-RECT ResizeWindowBySteps(RECT current,int steps,RECT workArea,SIZE minimum);
+RECT ResizeWindowBySteps(RECT current,int steps,RECT workArea,SIZE minimum,int snapDistance=0);
 std::wstring WheelModifierLabel(UINT modifiers);
 }

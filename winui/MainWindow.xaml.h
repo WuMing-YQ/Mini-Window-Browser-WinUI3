@@ -29,7 +29,7 @@ private:
     void ShowPresets(Microsoft::UI::Xaml::FrameworkElement const&);
     void FillPresetMenu(Windows::Foundation::Collections::IVector<Microsoft::UI::Xaml::Controls::MenuFlyoutItemBase> const&);
     Windows::Foundation::IAsyncAction ApplyPresetAsync(std::wstring name);
-    void ShowTabMenu();void ShowMoreMenu();
+    void ShowTabMenu();
     Windows::Foundation::IAsyncAction ToggleBookmarkAsync();
     Windows::Foundation::IAsyncAction RequestCloseAsync();
     void ApplyFrame(miniwindow::WindowMode);
