@@ -10,7 +10,7 @@
 
 ## 启动
 
-完整解压文件夹，双击根目录 `MiniWindow.exe` 并确认管理员权限提示。根目录只放启动入口、README、`app/` 和 `docs/`；DLL、语言资源与程序本体集中在 `app/`，使用说明和许可证放在 `docs/`。请保留完整目录结构。需要 Windows 10 2004 或更新版本、x64，以及已安装的 WebView2 Runtime。本包自带 Windows App SDK 与原生 VC 运行库，不需要安装 Flutter、Dart 或 .NET 应用运行时。缺少 WebView2 时会显示错误，不自动下载。
+完整解压文件夹，双击根目录 `MiniWindow.exe` 并确认管理员权限提示。根目录只放启动入口、README、`app/` 和 `docs/`；DLL、语言资源与程序本体集中在 `app/`，使用说明和许可证放在 `docs/`。请保留完整目录结构。需要 Windows 10 2004 或更新版本、x64，以及已安装的 WebView2 Runtime。界面仅支持简体中文，随包只保留 `zh-CN` 的 WinUI MUI 语言资源。本包自带 WinUI 必需的 Windows App SDK 组件与原生 VC 运行库，不包含 AI／机器学习／Widgets 组件或 WebView2 浏览器内核，不需要安装 Flutter、Dart 或 .NET 应用运行时。缺少 WebView2 时会显示错误，不自动下载。
 
 便携包目录与旧版本分开，不覆盖旧 EXE 或浏览器资料。默认新建独立网页数据。配置与网页资料保存在 `app/` 内。升级前先退出旧程序，将旧版的 `config.winui.ini`（或旧 `config.ini`）及 `data/`、`XiaoChuang.exe.WebView2/` 等实际使用的网页资料目录复制到新版 `app/` 内；旧版若已有 `app/`，从该目录复制。原文件保持不动。首次读取会备份旧配置并生成 `config.winui.ini`；损坏／不可写时显示错误，不报告保存成功。网页资料被旧程序占用时可选择独立测试资料。
 

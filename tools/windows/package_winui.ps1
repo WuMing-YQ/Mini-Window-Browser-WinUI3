@@ -31,6 +31,22 @@ try{
  New-Item -ItemType Directory -Path $payload,$documentation | Out-Null
  Copy-Item (Join-Path $app '*') $payload -Recurse -Force
  Copy-Item $launcherExe (Join-Path $package 'MiniWindow.exe')
+ # WinUI copies all MUI languages by default. Only remove language resource files;
+ # never remove an arbitrary directory or a runtime DLL by language-like naming.
+ foreach($mui in @(Get-ChildItem $payload -Recurse -File -Filter '*.mui')){
+  $culture=$mui.Directory
+  if($culture.Name -eq 'zh-CN'){continue}
+  try{[void][Globalization.CultureInfo]::GetCultureInfo($culture.Name)}catch{throw ('Unrecognized MUI culture directory: '+$culture.FullName)}
+  Remove-Item -LiteralPath $mui.FullName
+  if(-not(Get-ChildItem -LiteralPath $culture.FullName -Force)){Remove-Item -LiteralPath $culture.FullName}
+ }
+ foreach($name in @('Microsoft.ui.xaml.dll.mui','Microsoft.UI.Xaml.Phone.dll.mui')){
+  if(-not(Test-Path (Join-Path $payload ('zh-CN/'+$name)))){throw ('Missing Simplified Chinese resource: '+$name)}
+ }
+ # Fail instead of silently shipping a stale build with unused SDK components.
+ $unexpected=@(Get-ChildItem $payload -Recurse -File | Where-Object {$_.Name -match '^(onnxruntime|DirectML|Microsoft\.Windows\.(AI|Widgets|Workloads)|msedgewebview2\.exe|msedge\.exe)'})
+ if($unexpected.Count){throw ('Unexpected package component: '+($unexpected.Name -join ', '))}
+
  # WebView2 NuGet may statically link the loader; include the x64 loader explicitly for a complete reusable folder.
  $loader=Get-ChildItem (Join-Path $SourceDirectory 'winui/packages/Microsoft.Web.WebView2.1.0.3179.45') -File -Recurse -Filter 'WebView2Loader.dll' | Where-Object {$_.DirectoryName -match '[\\/]x64([\\/]|$)'} | Select-Object -First 1
  if(-not $loader){throw 'x64 WebView2 loader payload missing.'}
@@ -103,7 +119,7 @@ No Flutter, Dart or .NET application runtime is used.
  $rootEntries=@(Get-ChildItem $package | ForEach-Object {$_.Name} | Sort-Object)
  if(($rootEntries -join '|') -ne 'app|docs|MiniWindow.exe|README.md'){throw 'Unexpected files at portable package root.'}
  $files=@(Get-ChildItem $package -File -Recurse | Sort-Object FullName | ForEach-Object {@{path=$_.FullName.Substring($package.Length+1).Replace('\','/');sha256=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant();bytes=$_.Length}})
- $manifest=[ordered]@{version='2.0.0-winui-preview';configuration='Release';platform='x64';elevation='requireAdministrator';selfContained=$true;entryPoint='MiniWindow.exe';application='app/MiniWindow.exe';sourceSha256=$source.sha256;createdUtc=[DateTime]::UtcNow.ToString('o');dependencies=$dependencies;webView2Runtime=$environment.WebView2;nativeCrt=$redist.Name;automatedTests=if($UserAcceptanceOnly){'not run at user request'}else{'passed'};manualAcceptance='pending user';gameCompatibility='not run';files=$files}
+ $manifest=[ordered]@{version='2.0.0-winui-preview';configuration='Release';platform='x64';elevation='requireAdministrator';selfContained=$true;uiLanguage='zh-CN';entryPoint='MiniWindow.exe';application='app/MiniWindow.exe';sourceSha256=$source.sha256;createdUtc=[DateTime]::UtcNow.ToString('o');dependencies=$dependencies;webView2Runtime=$environment.WebView2;nativeCrt=$redist.Name;automatedTests=if($UserAcceptanceOnly){'not run at user request'}else{'passed'};manualAcceptance='pending user';gameCompatibility='not run';files=$files}
  $manifest|ConvertTo-Json -Depth 8|Set-Content (Join-Path $documentation 'manifest.json') -Encoding UTF8
  foreach($entry in $files){if((Get-FileHash (Join-Path $package $entry.path) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.sha256){throw ('Package file changed: '+$entry.path)}}
  Compress-Archive -Path $package -DestinationPath $zip -CompressionLevel Optimal

@@ -52,7 +52,7 @@
 2. 双击文件夹内的 `MiniWindow.exe`。保留旁边的 `app/` 和 `docs/` 文件夹，不能只复制 EXE。
 3. 本版沿用原项目的管理员权限启动策略，会显示 UAC 提示。
 
-构建目标为 Windows 10 2004 或更新版本、x64。需要已安装的 Microsoft Edge WebView2 Runtime；便携包带有 Windows App SDK 和原生 VC 运行库。缺少 WebView2 时程序会报告错误，不自动下载安装。
+构建目标为 Windows 10 2004 或更新版本、x64。需要已安装的 Microsoft Edge WebView2 Runtime；界面仅支持简体中文。便携包带有 WinUI 必需的 Windows App SDK 组件和原生 VC 运行库，不包含 AI／机器学习／Widgets 组件，也不包含 WebView2 浏览器内核。缺少 WebView2 时程序会报告错误，不自动下载安装。
 
 程序配置保存在 `app/config.winui.ini`，网页资料保存在 `app/data/webview-profile`。升级前先退出旧版本、备份配置及网页资料；不要把自己的资料打进公开分发包。旧版配置迁移方式见[使用说明](docs/validation/winui-redesign.md)。
 
