@@ -24,7 +24,7 @@ namespace winrt::MiniWindow::implementation {
 MainWindow::MainWindow() {
     InitializeComponent();
     winrt::check_hresult(this->try_as<IWindowNative>()->get_WindowHandle(&hwnd_));
-    miniwindow::ApplyApplicationIcon(AppWindow());
+    miniwindow::ApplyApplicationIcon(AppWindow(),hwnd_);
 
     wchar_t executable[32768]{};GetModuleFileNameW(nullptr,executable,32768);
     directory_=std::filesystem::path(executable).parent_path();
@@ -165,6 +165,7 @@ void MainWindow::ApplyFrame(miniwindow::WindowMode mode) {
     const bool normal=mode==miniwindow::WindowMode::Normal||mode==miniwindow::WindowMode::Maximized;
     const auto presenter=AppWindow().Presenter().as<Microsoft::UI::Windowing::OverlappedPresenter>();
     ExtendsContentIntoTitleBar(false);SetTitleBar(nullptr);presenter.SetBorderAndTitleBar(normal,normal);
+    miniwindow::ApplyCaptionIcon(hwnd_);
     miniwindow::ThemeSync::Apply(hwnd_,state_.settings.themeMode,Root(),AppWindow());
 }
 void MainWindow::SyncWindowState(){if(!windowService_)return;if(input_)input_->CancelGesture();state_.windowHidden=windowService_->Hidden();state_.immersionActive=windowService_->Immersive();state_.windowMode=windowService_->VisibleMode();if(state_.windowHidden||state_.immersionActive){WebSlot().ReleasePointerCaptures();if(browser_)browser_->CancelMouseInput();}if(browser_)browser_->SetVisible(!state_.windowHidden);if(input_){input_->RefreshRuntime();input_->SetImmersiveWebFullscreen(webFullscreen_&&state_.immersionActive);}if(coordinator_)coordinator_->OnWindowState(state_.windowMode,state_.windowHidden,state_.immersionActive);UpdateChromeLayout();LayoutBrowser();}
@@ -186,7 +187,9 @@ LRESULT CALLBACK MainWindow::WindowProcedure(HWND hwnd,UINT message,WPARAM param
         self->windowService_->HandleMessage(message,parameter,data);
         if(message==WM_DPICHANGED||message==WM_WINDOWPOSCHANGED)self->LayoutBrowser();
     }
-    return DefSubclassProc(hwnd,message,parameter,data);
+    const auto result=DefSubclassProc(hwnd,message,parameter,data);
+    if(message==WM_DPICHANGED)miniwindow::ApplyCaptionIcon(hwnd,HIWORD(parameter));
+    return result;
 }
 
 void MainWindow::InitializeBrowserInput(){
