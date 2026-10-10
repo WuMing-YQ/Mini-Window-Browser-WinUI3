@@ -1,220 +1,73 @@
-<div align="center">
+# 小窗浏览器 · WinUI 3 衍生版
 
-<img src="assets/app-icon-small-preview.png" alt="小窗浏览器图标" width="112" height="112">
+一个面向 Windows 的便携小窗浏览器，用于置顶查看网页、视频与攻略。本版使用 C++/WinRT、WinUI 3 和 WebView2。
 
-# 小窗浏览器
+## 项目来源与关系
 
-**专为单屏玩家打造的 Windows 画中画浏览器**
+本项目基于 **[azurplain / Mini-Window-Browser](https://github.com/azurplain/Mini-Window-Browser)** 修改，是围绕个人使用需求制作的衍生版本。窗口控制、媒体操作、快捷键、配置等实现继续使用或改造了原项目代码；当前版主要重做了 WinUI 3 界面，并调整部分交互和窗口行为。界面重做不等于全部代码从零原创。
 
-让攻略、视频和直播悬浮在游戏上方；需要操作游戏时，窗口可以自动让路。
+原项目及其已有贡献的署名与许可证保留。本版的修改、说明及交付由本版维护者负责，不代表原作者发布、审核或认可了这些改动。本版问题请向提供本版的人反馈，避免把本版新增的问题归到原项目。
 
-[![Release](https://img.shields.io/github/v/release/azurplain/Mini-Window-Browser?label=release&color=5865f2)](https://github.com/azurplain/Mini-Window-Browser/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/azurplain/Mini-Window-Browser/total?color=7c5cff)](https://github.com/azurplain/Mini-Window-Browser/releases)
-[![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078d4?logo=windows)](https://www.microsoft.com/windows)
-[![WebView2](https://img.shields.io/badge/WebView2-1.0.4078.44-0f6cbd?logo=microsoftedge)](https://developer.microsoft.com/microsoft-edge/webview2/)
-[![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE.txt)
+- [原项目主页与源码](https://github.com/azurplain/Mini-Window-Browser)
+- [原项目发行页面](https://github.com/azurplain/Mini-Window-Browser/releases)（这里下载的是原项目版本）
+- [保留的原版 README](README-upstream.md)
+- [当前版使用说明与验证范围](docs/validation/winui-redesign.md)
 
-[下载最新版](https://github.com/azurplain/Mini-Window-Browser/releases/latest) · [用户手册](用户手册.md) · [更新日志](CHANGELOG.md) · [问题反馈](https://github.com/azurplain/Mini-Window-Browser/issues)
+当前衍生版尚未在本文指定独立公开仓库或下载页面，请使用随本说明提供的便携包及对应源码包。
 
-</div>
+## 致谢
 
----
+诚挚感谢 **azurplain** 以及原项目的贡献者。感谢你们投入时间，把小窗浏览器的想法落实为可以使用、阅读和继续修改的开源代码，也感谢你们通过开源许可让像我这样能力有限的使用者，有机会学习并调整工具以满足自己的需求。
 
-## 它能做什么
+这份修改建立在你们已经完成的工作之上。原项目的设计、实现和维护付出应当被看见；本版新增的界面与调整不能替代或掩盖这些贡献。也感谢 WinUI 3、WebView2 及相关依赖的开发与维护者。
 
-小窗浏览器最初为“单显示器玩游戏时查看地图和视频”而开发。它不是一个追求大而全的传统浏览器，而是一个轻量、便携、始终在手边的游戏辅助窗口。
+## 本人的能力与 AI 辅助开发声明
 
-<table>
-<tr>
-<td width="50%" valign="top">
+我想诚实说明：**本人目前的代码能力严重不足，尚不足以独立完成这次重构，也无法独立、充分地审查全部实现。** 为了实现自己的使用需求，我主要借助大语言模型与 AI 编程工具（本次使用 Codex），通过描述需求、讨论方案、运行软件和反馈问题，逐步完成这些修改。
 
-### 沉浸式挖孔
+本版属于大量依赖 AI 辅助的开发实践，也可以称为 **vibe coding**。其中的界面重构、代码修改、排错和文档整理都有 AI 的实质参与。我的主要参与是提出需求、作出取舍以及进行实际使用反馈；我不会把模型生成或协助完成的代码表述为完全由本人独立编写。
 
-网页画面保持不透明，鼠标附近形成完全透明且可穿透点击的圆孔。视频不会挡住游戏操作，圆孔半径可调。
+我也清楚，代码能编译、程序能运行，以及 AI 给出的审查结论，都不能证明实现没有缺陷。本人的测试和理解能力有限，仍可能遗漏兼容性、稳定性或安全问题，因此我无法承诺本版已经经过全面、专业的验证。本文如有表达或技术判断不准确之处，同样欢迎指出。
 
-</td>
-<td width="50%" valign="top">
+使用 AI 不是推卸责任的理由。我愿意如实说明已知问题，在能力和时间允许的范围内继续修正，并尊重原项目的署名和许可要求。也恳请大家将本版的问题与原作者的工作区分开来，不要因为本版修改带来的问题而责怪原作者。感谢原作者的开放与付出，也感谢愿意试用、反馈和帮助改进的人。
 
-### 整体透明
+## 当前版主要变化
 
-完整显示小窗内容；鼠标移入时自动隐藏，移出后恢复。基础不透明度可按百分比调节。
+- 使用 WinUI 3 重做主窗口、书签与预设管理、设置和沉浸控制面板。
+- 书签与预设按钮直接打开快捷列表；其他设置集中在设置页，移除三个点的更多菜单。
+- 收藏按钮位于地址栏内；窄窗保留工具栏按钮，按需要换行。
+- 鼠标挖孔与移入减淡分别设置基础不透明度。减淡采用比例计算：`基础不透明度 × (1 − 额外减淡比例)`。
+- 普通窗口获得焦点时，可用组合键加滚轮调节窗口大小，按屏幕贴边位置选择缩放锚点。
+- 进入／退出沉浸尽量保持网页视口大小；处理贴边、视频全屏比例与网页鼠标输入。
+- 移除“输入时暂停快捷键”功能。全局媒体快捷键可能与其他软件输入冲突，可在设置中改为组合键或停用。
 
-</td>
-</tr>
-<tr>
-<td valign="top">
+这份说明针对当前衍生版；旧版变更记录和使用手册可作为历史参考，当前操作以本 README 和当前版使用说明为准。
 
-### 场景预设
+## 便携运行
 
-保存窗口位置、大小、全部标签页、当前标签、热键和沉浸设置。不同游戏布局可以一键切换。
+1. 完整解压 `MiniWindow-WinUI3-x64-Portable.zip` 到可写目录。
+2. 双击文件夹内的 `MiniWindow.exe`。保留旁边的 DLL、资源和许可证目录，不能只复制 EXE。
+3. 本版沿用原项目的管理员权限启动策略，会显示 UAC 提示。
 
-</td>
-<td valign="top">
+构建目标为 Windows 10 2004 或更新版本、x64。需要已安装的 Microsoft Edge WebView2 Runtime；便携包带有 Windows App SDK 和原生 VC 运行库。缺少 WebView2 时程序会报告错误，不自动下载安装。
 
-### 全局媒体控制
+程序在自身目录保存 `config.winui.ini` 和 `data/webview-profile` 等资料。升级前先退出旧版本、备份配置及网页资料；不要把自己的资料打进公开分发包。旧版配置迁移方式见[使用说明](docs/validation/winui-redesign.md)。
 
-适配 Bilibili、抖音、YouTube，并回退到通用 HTML5 视频。支持播放、选集、点按跳转和长按快进/快退。
+## 构建与验证范围
 
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-### 多标签与书签
-
-标签数量增加时自动收窄；标签栏右键可关闭当前、其他或全部标签。书签使用下拉列表，两步即可跳转。
-
-</td>
-<td valign="top">
-
-### 游戏环境热键
-
-键盘、鼠标中键和双侧键均可绑定。只在绑定或使用鼠标键时才按需启用独立 Raw Input 线程，避免全局鼠标钩子影响游戏鼠标流畅度。
-
-</td>
-</tr>
-</table>
-
-## v1.4.4 网页缩放与稳定性更新
-
-- 设置新增“固定网页缩放比例”，默认不启用、数值 100%，支持 25%–500%；启用后导航、切换标签和重启保持设定比例。
-- 固定时保持设定比例；原生缩放/捏合开关在下次导航生效，取消固定后刷新网页恢复手动缩放，保留已设定数值。
-- 场景预设保存各自的缩放开关与比例，旧配置自动兼容。
-- 修复旧版预设热键误继承停用状态、空白页被转成搜索，并加固网页视图异步初始化与重建流程。
-
-## v1.4.3 稳定性更新
-
-- 输入保护的跨程序识别移到独立线程，系统 OSD、通知和其他程序弹窗不再卡住视频、挖孔和热键。
-- 修复热键按键释放丢失后的“卡键”，以及 `0` / `9` 快速组合时互相误防抖的问题。
-- 新建窗口、切换标签和页面失败改为延迟切换与超时自恢复，避免永久停在白页或“正在加载”。
-- 沉浸模式会正确移交焦点并保持网页视频全屏；顶部吸附的小窗隐藏栏后会贴紧显示器上沿。
-- 挖孔刷新限制为约 20Hz，隐藏和光标远离时停止无用区域更新；同时复用界面绘制资源，降低游戏前台负载。
-- 预设现在同步保存网页全屏比例适配、比例锁定和最大化顶部拖动开关；配置写入改为原子替换，异常退出时更不易损坏。
-
-## v1.4 亮点
-
-- 使用 Direct2D / DirectWrite 重做 Fluent 风格原生界面，跟随 Windows 深浅色和 DPI。
-- 全新的蓝紫应用图标统一用于 EXE、任务栏、Alt-Tab、窗口和系统托盘。
-- 重构窗口状态机，修复最小化、隐藏恢复、托盘、无缝最大化和多显示器位置恢复。
-- 网页视频全屏只覆盖小窗内容区，可选按视频比例临时调整窗口，退出后恢复原位置。
-- 沉浸挖孔固定为完全透明且孔外不透明；整体透明模式独立提供透明度调节。
-- 预设可保存并恢复全部标签页；书签改为下拉式管理；标签栏支持批量关闭。
-- 新增长按快进/快退、后台媒体热键、输入保护、GPU 兼容模式和视频掉帧诊断。
-- WebView2 SDK 升级至 1.0.4078.44，源码拆分为状态、窗口、UI、热键、输入、媒体和配置模块。
-
-完整变更请查看 [CHANGELOG.md](CHANGELOG.md)。
-
-## 快速开始
-
-### 系统要求
-
-- Windows 10 或 Windows 11，推荐 x64 系统。
-- Microsoft Edge WebView2 Runtime。Windows 10/11 通常已经安装；缺失时可从[微软官网下载](https://developer.microsoft.com/microsoft-edge/webview2/)。
-
-### 下载与运行
-
-1. 在 [Releases](https://github.com/azurplain/Mini-Window-Browser/releases/latest) 下载 `Mini-Window-Browser-v1.4.4-x64.zip`。
-2. 将压缩包完整解压到普通可写目录，不要只从压缩包内直接运行 EXE。
-3. 保持 `XiaoChuang.exe` 与 `WebView2Loader.dll` 位于同一目录。
-4. 双击 `XiaoChuang.exe`，在 Windows UAC 窗口中选择“是”。
-
-程序使用管理员权限，是为了让热键能够在同样以管理员身份运行的游戏和启动器中工作。Windows 不支持便携程序“一次授权后永久免提示”，因此每次启动都会出现 UAC。
-
-首次运行会在程序目录生成 `config.ini` 和 WebView2 用户数据目录。升级时可以直接覆盖程序文件，但请保留自己的 `config.ini`。
-
-## 默认快捷键
-
-| 按键 | 功能 | 行为 |
-|:---:|---|---|
-| `0` | 沉浸模式 | 在普通窗口与当前沉浸风格之间切换 |
-| `9` | 隐藏 / 显示 | 一键隐藏或拉起小窗 |
-| `` ` `` | 播放 / 暂停 | 控制当前活动视频 |
-| `5` | 快退 | 点按回退 5 秒，长按连续倒退 |
-| `6` | 快进 | 点按前进 5 秒，长按临时加速 |
-| `7` / `8` | 上一集 / 下一集 | Bilibili 番剧优先使用有效控制栏按钮；普通视频与 YouTube 优先调用播放器 API |
-
-所有快捷键都可在设置中改成键盘组合、鼠标中键、鼠标侧键 1 或侧键 2，也可通过旁边的“启用”勾选框单独停用而不丢失原键位。输入保护开启时，网页输入框、地址栏和可识别的外部编辑控件会暂停包括隐藏/显示在内的全部小窗热键，离开输入状态后自动恢复。
-
-## 主要使用方式
-
-### 两种沉浸模式
-
-| | 挖孔穿透 | 整体透明 |
-|---|---|---|
-| 显示效果 | 鼠标周围圆形区域显示网页 | 显示完整窗口 |
-| 操作底层程序 | 孔外透明且点击穿透 | 鼠标移入窗口时自动隐藏 |
-| 可调项目 | 圆孔半径 | 基础不透明度 |
-| 适用场景 | 地图标记、局部视频画面 | 直播、攻略和完整视频 |
-
-### 窗口与网页全屏
-
-- 右上角最大化按钮使用当前显示器工作区，保留小窗浏览器顶部栏且不留下缩放边框。
-- 网页播放器请求全屏时，只覆盖小窗网页内容区，不会占满整块显示器。
-- “按视频比例自动调整小窗”可减少网页全屏黑边；退出播放器全屏后恢复原窗口位置和大小。
-- 勾选自动调整后，可进一步开启“全屏后锁定画面比例”，拖动窗口边缘时按视频比例等比缩放。
-- 真正绕过 Windows DWM 的独占全屏游戏无法被普通桌面顶层窗口覆盖。此时请把游戏切换为无边框全屏或窗口化全屏。
-
-### 预设、书签与托盘
-
-- 预设保存全部标签页、当前标签、窗口布局、沉浸设置、热键和常用开关；名称不可重复。
-- 点击星标收藏当前网页，点击“书签”打开下拉列表，可直接访问、编辑或删除。
-- 开启托盘模式后，最小化会隐藏到托盘；左键单击托盘图标恢复，右键可打开、进入设置或退出。
-
-## 配置与隐私
-
-- 设置、书签、预设和标签会话保存在程序目录的 `config.ini`。
-- 浏览器缓存、Cookie 和网站登录状态保存在 `XiaoChuang.exe.WebView2` 目录。
-- 小窗浏览器本身不会把配置、书签或诊断信息上传到项目服务器；网页内容和登录行为仍由对应网站及 WebView2 处理。
-- 正式发布压缩包不包含任何开发者配置、Cookie、缓存、浏览历史或 PDB 调试文件。
-
-## 从源码构建
-
-### 依赖
-
-- Visual Studio 2022，安装“使用 C++ 的桌面开发”工作负载。
-- Windows 10/11 SDK。
-- NuGet：Microsoft.Web.WebView2 1.0.4078.44、Microsoft.Windows.ImplementationLibrary。
-
-### 构建
+开发环境：Visual Studio 2026、C++ 桌面开发及 C++ WinUI 工具、MSVC v145、Windows SDK 10.0.26100.0。依赖版本固定在 源码中的 `winui/packages.config`。
 
 ```powershell
-git clone https://github.com/azurplain/Mini-Window-Browser.git
-cd Mini-Window-Browser
-msbuild .\小窗.slnx /m /t:Rebuild /p:Configuration=Release /p:Platform=x64
+# 仅编译，不启动应用或测试
+./tools/windows/build_winui.ps1 -BuildOnly
 ```
 
-x86 构建将 `Platform` 改为 `x86`。核心测试目标不依赖第三方测试框架：
+便携打包使用 `tools/windows/package_winui.ps1`；该脚本需要源码同步阶段生成的 `source-manifest.json`，具体流程见[构建说明](docs/validation/winui-redesign.md#从源码构建)。
 
-```powershell
-.\x64\Release\XiaoChuang.Tests.exe
-```
+当前交付执行了代码审查、Release 编译和文件完整性校验。按维护者要求，后期修改没有运行自动测试、截图或桌面自动操作，实际使用验证由维护者进行。早期测试记录不等于当前包已全面通过测试；游戏独占全屏、不同 DPI 和多显示器等场景不能据此宣称兼容。
 
-### 代码结构
+## 许可证与依赖
 
-```text
-src/
-├── Application.*            应用生命周期、主窗口与 UI
-├── AppModel.h               应用状态与配置模型
-├── ConfigStore.*            INI 配置和兼容迁移
-├── WindowModeController.*   窗口模式、沉浸、全屏与置顶
-├── HotkeyManager.*          键盘/鼠标热键、长按状态
-├── InputGuard.*             输入焦点保护
-├── MediaBridge.*            WebView2 媒体与站点适配
-├── ThemeManager.*           Direct2D/DirectWrite 主题绘制
-└── Diagnostics.*            系统、GPU 与视频诊断
-```
+保留原项目的 **GPL-3.0** 许可证，见 [LICENSE.txt](LICENSE.txt)，具体授权条款以该文件及源码中的原有声明为准。本声明不替代许可证，也不改变原作者或其他贡献者的权利。
 
-## 文档
-
-- [用户手册](用户手册.md)：完整设置说明、使用方法和问题排查。
-- [v1.4 更新日志](CHANGELOG.md)：功能、修复、兼容性与已知限制。
-- [发布验证报告](README-测试说明.md)：双架构测试、静态分析和人工验证项目。
-- [第三方许可](THIRD_PARTY_NOTICES.txt)：WebView2 SDK 与 WIL 许可信息。
-
-## 参与项目
-
-欢迎通过 [Issues](https://github.com/azurplain/Mini-Window-Browser/issues) 报告问题或提出建议。反馈时建议附上设置页中的“复制诊断信息”、出现问题的网站、游戏窗口模式和复现步骤。
-
-## 许可证
-
-本项目基于 [GNU General Public License v3.0](LICENSE.txt) 开源。
+便携包的 `licenses/` 目录收录项目许可证及依赖许可说明；随包提供对应源码包。WebView2 Runtime 由微软单独提供。AI 辅助开发声明说明的是本版的制作方式，不意味着原项目也采用同样的开发方式。

@@ -2,6 +2,12 @@
 
 本版完整重做应用界面：主窗口、书签快捷列表、书签／预设／设置管理和独立沉浸控制面板。使用原生 C++/WinRT WinUI 3，网页由一个活动 WebView2 实例承载。
 
+## 来源与开发声明
+
+本版是基于 [azurplain / Mini-Window-Browser](https://github.com/azurplain/Mini-Window-Browser) 的个人衍生版本，诚挚感谢原作者及贡献者。设置 → 诊断与关于提供原项目链接、衍生关系和简要致谢。
+
+本版大量借助 Codex 与大语言模型进行开发（vibe coding）。维护者的完整能力声明、AI 参与说明、原项目致谢和许可说明见随包 `README.md`。
+
 ## 启动
 
 完整解压文件夹，运行 `MiniWindow.exe` 并确认管理员权限提示。保留同目录 DLL、MiniWindow.pri 和资源子目录。需要 Windows 10 2004 或更新版本、x64，以及已安装的 WebView2 Runtime。本包自带 Windows App SDK 与原生 VC 运行库，不需要安装 Flutter、Dart 或 .NET 应用运行时。缺少 WebView2 时会显示错误，不自动下载。
