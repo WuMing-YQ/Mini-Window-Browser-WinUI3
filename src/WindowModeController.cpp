@@ -1,5 +1,6 @@
 #include "WindowModeController.h"
 #include "ImmersionPolicy.h"
+#include "WindowFrameBounds.h"
 
 #include "CoreLogic.h"
 
@@ -290,23 +291,20 @@ void WindowModeController::ReassertTopmost() const {
 void WindowModeController::SnapMovingRect(RECT* movingRect, bool controlHeld) const {
     if (!window_ || !settings_ || !movingRect || controlHeld || settings_->snapThreshold <= 0 ||
         visibleMode_ != WindowMode::Normal) return;
-    HMONITOR monitor = MonitorFromRect(movingRect, MONITOR_DEFAULTTONEAREST);
+    const auto frame = ReadWindowFrameInsets(window_);
+    const RECT visible = frame.Visible(*movingRect);
+    HMONITOR monitor = MonitorFromRect(&visible, MONITOR_DEFAULTTONEAREST);
     MONITORINFO info{sizeof(info)};
     if (!GetMonitorInfoW(monitor, &info)) return;
-    const RECT screen = info.rcMonitor;
-    const int width = movingRect->right - movingRect->left;
-    const int height = movingRect->bottom - movingRect->top;
+    const RECT screen = info.rcWork;
     const int threshold = settings_->snapThreshold;
-    if (std::abs(movingRect->left - screen.left) <= threshold) {
-        movingRect->left = screen.left; movingRect->right = screen.left + width;
-    } else if (std::abs(movingRect->right - screen.right) <= threshold) {
-        movingRect->right = screen.right; movingRect->left = screen.right - width;
-    }
-    if (std::abs(movingRect->top - screen.top) <= threshold) {
-        movingRect->top = screen.top; movingRect->bottom = screen.top + height;
-    } else if (std::abs(movingRect->bottom - screen.bottom) <= threshold) {
-        movingRect->bottom = screen.bottom; movingRect->top = screen.bottom - height;
-    }
+    LONG dx=0,dy=0;
+    if (std::abs(visible.left - screen.left) <= threshold) dx=screen.left-visible.left;
+    else if (std::abs(visible.right - screen.right) <= threshold) dx=screen.right-visible.right;
+    if (std::abs(visible.top - screen.top) <= threshold) dy=screen.top-visible.top;
+    else if (std::abs(visible.bottom - screen.bottom) <= threshold) dy=screen.bottom-visible.bottom;
+    // Move only: retain the outer dimensions, with the invisible border offscreen.
+    OffsetRect(movingRect,dx,dy);
 }
 
 void WindowModeController::RefreshVisualState() {
@@ -428,7 +426,8 @@ RECT WindowModeController::EnsureVisible(RECT rect, bool useWorkArea) const {
     HMONITOR monitor = MonitorFromRect(&rect, MONITOR_DEFAULTTONEAREST);
     MONITORINFO info{sizeof(info)};
     if (!GetMonitorInfoW(monitor, &info)) return rect;
-    const RECT work = useWorkArea ? info.rcWork : info.rcMonitor;
+    // Clamp visible edges, allowing only the invisible border outside the area.
+    const RECT work = ReadWindowFrameInsets(window_).Outer(useWorkArea ? info.rcWork : info.rcMonitor);
     int width = std::clamp(static_cast<int>(rect.right - rect.left), 160,
                            static_cast<int>(work.right - work.left));
     int height = std::clamp(static_cast<int>(rect.bottom - rect.top), 120,
