@@ -6,7 +6,7 @@
 
 本版是基于 [azurplain / Mini-Window-Browser](https://github.com/azurplain/Mini-Window-Browser) 的个人衍生版本，诚挚感谢原作者及贡献者。设置 → 诊断与关于提供原项目链接、衍生关系和简要致谢。
 
-本版大量借助 Codex 与大语言模型进行开发（vibe coding）。维护者的完整能力声明、AI 参与说明、原项目致谢和许可说明见随包 `README.md`。
+本版大量借助大模型编程软件进行开发（vibe coding）。维护者的完整能力声明、AI 参与说明、原项目致谢和许可说明见随包 `README.md`。
 
 ## 启动
 
