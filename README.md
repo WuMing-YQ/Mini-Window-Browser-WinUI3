@@ -49,12 +49,12 @@
 ## 便携运行
 
 1. 完整解压 `MiniWindow-WinUI3-x64-Portable.zip` 到可写目录。
-2. 双击文件夹内的 `MiniWindow.exe`。保留旁边的 DLL、资源和许可证目录，不能只复制 EXE。
+2. 双击文件夹内的 `MiniWindow.exe`。保留旁边的 `app/` 和 `docs/` 文件夹，不能只复制 EXE。
 3. 本版沿用原项目的管理员权限启动策略，会显示 UAC 提示。
 
 构建目标为 Windows 10 2004 或更新版本、x64。需要已安装的 Microsoft Edge WebView2 Runtime；便携包带有 Windows App SDK 和原生 VC 运行库。缺少 WebView2 时程序会报告错误，不自动下载安装。
 
-程序在自身目录保存 `config.winui.ini` 和 `data/webview-profile` 等资料。升级前先退出旧版本、备份配置及网页资料；不要把自己的资料打进公开分发包。旧版配置迁移方式见[使用说明](docs/validation/winui-redesign.md)。
+程序配置保存在 `app/config.winui.ini`，网页资料保存在 `app/data/webview-profile`。升级前先退出旧版本、备份配置及网页资料；不要把自己的资料打进公开分发包。旧版配置迁移方式见[使用说明](docs/validation/winui-redesign.md)。
 
 ## 构建与验证范围
 
@@ -73,4 +73,4 @@
 
 保留原项目的 **GPL-3.0** 许可证，见 [LICENSE.txt](LICENSE.txt)，具体授权条款以该文件及源码中的原有声明为准。本声明不替代许可证，也不改变原作者或其他贡献者的权利。
 
-便携包的 `licenses/` 目录收录项目许可证及依赖许可说明；随包提供对应源码包。WebView2 Runtime 由微软单独提供。AI 辅助开发声明说明的是本版的制作方式，不意味着原项目也采用同样的开发方式。
+便携包的 `docs/licenses/` 目录收录项目许可证及依赖许可说明；随包提供对应源码包。WebView2 Runtime 由微软单独提供。AI 辅助开发声明说明的是本版的制作方式，不意味着原项目也采用同样的开发方式。

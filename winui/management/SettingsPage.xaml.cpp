@@ -104,7 +104,7 @@ void SettingsPage::Bind(miniwindow::AppCoordinator& app,std::function<void(miniw
  auto copy=Action(L"复制诊断");copy.Click([this](auto&&,auto&&){const auto value=std::wstring(diagnostic_.Text());if(value.empty()){Feedback().Text(L"请先获取诊断。");return;}Feedback().Text(xiaochuang::CopyTextToClipboard(nullptr,value)?L"诊断已复制。":L"复制失败，请重试。");});panels_[5].Children().Append(copy);auto reset=Action(L"恢复默认设置…");reset.Click([this](auto&&,auto&&){ResetAsync();});Group(panels_[5],L"重置");Row(panels_[5],L"恢复默认",reset,L"保留书签、标签、场景预设、主题与渲染模式。");Group(panels_[5],L"关于小窗浏览器");
  panels_[5].Children().Append(miniwindow::ui::Text(L"Mini Window Browser · WinUI 3 衍生版\n基于 azurplain / Mini-Window-Browser，由本版维护者借助 AI 按个人需求修改，是原项目的个人衍生版本。\n本版的修改不代表原作者发布或认可。"));
  panels_[5].Children().Append(miniwindow::ui::Text(L"诚挚感谢 azurplain 与原项目贡献者的设计、开发和维护付出，以及开放源码、允许继续学习与修改的善意。"));
- panels_[5].Children().Append(miniwindow::ui::Text(L"许可证：GPL-3.0，保留原项目署名；许可文件见 licenses/MiniWindow-GPL-3.0.txt。\n完整声明见随包 README.md。"));HyperlinkButton upstream;upstream.Content(box_value(L"查看原项目"));upstream.NavigateUri(Windows::Foundation::Uri(L"https://github.com/azurplain/Mini-Window-Browser"));panels_[5].Children().Append(upstream);
+ panels_[5].Children().Append(miniwindow::ui::Text(L"许可证：GPL-3.0，保留原项目署名；许可文件见 docs/licenses/MiniWindow-GPL-3.0.txt。\n完整声明见随包 README.md。"));HyperlinkButton upstream;upstream.Content(box_value(L"查看原项目"));upstream.NavigateUri(Windows::Foundation::Uri(L"https://github.com/azurplain/Mini-Window-Browser"));panels_[5].Children().Append(upstream);
  syncing_=false;Refresh();
 }
 void SettingsPage::SelectCategory(int category){

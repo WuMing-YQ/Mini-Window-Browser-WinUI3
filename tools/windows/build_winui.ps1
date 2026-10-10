@@ -20,6 +20,7 @@ if(-not $TestsOnly){
  Build 'restore' (Join-Path $root 'winui\MiniWindow.slnx') 'Restore' 'app' @('/p:RestorePackagesConfig=true',"/p:RestoreRepositoryPath=$root\winui\packages")
  Build 'winui' (Join-Path $root 'winui\MiniWindow.vcxproj') 'Rebuild' 'app' @("/p:SmokeTestAsInvoker=$($SmokeTestAsInvoker.IsPresent.ToString().ToLowerInvariant())")
  if(-not(Test-Path (Join-Path $OutputRoot 'app\MiniWindow.exe'))){throw 'WinUI EXE missing after build.'}
+ Build 'launcher' (Join-Path $root 'winui\launcher\MiniWindow.Launcher.vcxproj') 'Build' 'launcher'
  Write-Output 'WINUI_BUILD_OK'
 }
 if($BuildOnly){Write-Output 'WINUI_TESTS_NOT_RUN_USER_ACCEPTANCE';return}
