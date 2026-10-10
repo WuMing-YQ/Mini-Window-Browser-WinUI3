@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/MiniWindow.png" width="128" height="128" alt="小窗浏览器图标">
+</p>
+
 # 小窗浏览器 · WinUI 3 衍生版
 
 一个面向 Windows 的便携小窗浏览器，用于置顶查看网页、视频与攻略。本版使用 C++/WinRT、WinUI 3 和 WebView2。
