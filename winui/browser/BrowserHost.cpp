@@ -10,6 +10,7 @@
 #include <wrl.h>
 #include <vector>
 #include <dcomp.h>
+#include <windowsx.h>
 #pragma comment(lib,"dcomp.lib")
 using Microsoft::WRL::Callback;
 namespace miniwindow {
@@ -27,6 +28,8 @@ bool Supported(const std::wstring& url) {
 struct BrowserHost::State {
     HWND parent=nullptr;
     HWND surface=nullptr;
+    UINT nativeButtons=0;POINT nativePoint{};
+    std::function<bool(int,UINT)> wheel;
     std::filesystem::path profile;
     winrt::Microsoft::UI::Dispatching::DispatcherQueue queue{nullptr};
     WebLifecycle life;
@@ -68,19 +71,16 @@ winrt::Windows::Foundation::IAsyncAction BrowserHost::InitializeAsync() {
     auto state=state_;
     const auto generation=state->life.Begin();state->generation=generation;
     state->ready=false;state->loading=false;
-    // This child owns only the visual. WinUI owns hit testing and explicitly
-    // forwards pointer events to the composition controller (including Win11's
-    // redirected input path, which bypasses ordinary child HWND mouse messages).
+    // Native hit testing owns the visible browser surface. Route real HWND
+    // mouse messages to WebView, including RDP, instead of expecting them to
+    // fall through the child airspace into the covered XAML WebSlot.
     if(!state->surface) {
-        WNDCLASSW windowClass{};windowClass.lpfnWndProc=[](HWND hwnd,UINT message,WPARAM w,LPARAM l)->LRESULT{
-            if(message==WM_NCHITTEST||message==WM_LBUTTONDOWN||message==WM_MOUSEWHEEL||message==WM_POINTERDOWN)TraceBrowserInput("native-websurface",message);
-            if(message==WM_NCHITTEST)return HTTRANSPARENT;
-            return DefWindowProcW(hwnd,message,w,l);
-        };
+        WNDCLASSW windowClass{};windowClass.lpfnWndProc=SurfaceProcedure;
+        windowClass.style=CS_DBLCLKS;windowClass.hCursor=LoadCursorW(nullptr,IDC_ARROW);
         windowClass.hInstance=GetModuleHandleW(nullptr);windowClass.lpszClassName=L"MiniWindow.BrowserCompositionSurface";
         if(!RegisterClassW(&windowClass)&&GetLastError()!=ERROR_CLASS_ALREADY_EXISTS){state->Report(BrowserError(HRESULT_FROM_WIN32(GetLastError())));co_return;}
         state->surface=CreateWindowExW(0,windowClass.lpszClassName,L"",WS_CHILD|WS_VISIBLE|WS_CLIPCHILDREN|WS_CLIPSIBLINGS,
-            state->bounds.left,state->bounds.top,state->bounds.right-state->bounds.left,state->bounds.bottom-state->bounds.top,state->parent,nullptr,windowClass.hInstance,nullptr);
+            state->bounds.left,state->bounds.top,state->bounds.right-state->bounds.left,state->bounds.bottom-state->bounds.top,state->parent,nullptr,windowClass.hInstance,state.get());
         if(!state->surface){state->Report(BrowserError(HRESULT_FROM_WIN32(GetLastError())));co_return;}
         SetWindowPos(state->surface,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
     }
@@ -208,7 +208,7 @@ void BrowserHost::SetVisible(bool visible) {
 void BrowserHost::ExecuteMedia(MediaCommand command,int rate) {if(state_->ready)state_->view->ExecuteScript(xiaochuang::MediaBridge::CommandScript(command,rate).c_str(),nullptr);}
 void BrowserHost::SetOccluded(bool occluded){auto s=state_;s->occluded=occluded;if(s->surface)ShowWindow(s->surface,occluded?SW_HIDE:SW_SHOWNA);if(s->controller)s->controller->put_IsVisible(s->visible&&!occluded&&!s->waiting);}
 void BrowserHost::Close() {
-    auto s=state_;s->life.Close();
+    auto s=state_;if(GetCapture()==s->surface)ReleaseCapture();s->life.Close();
     if(s->cancelGesture)s->cancelGesture();
     s->ready=false;
     s->status={};s->signal={};s->document={};s->focus={};s->cancelGesture={};s->newTab={};s->closeTab={};
@@ -245,15 +245,63 @@ void BrowserHost::SetDocumentHandler(std::function<void(std::wstring,std::wstrin
 void BrowserHost::SetNavigationHandlers(std::function<void()> cancel,std::function<void(std::wstring)> newTab,std::function<void()> closeTab) {state_->cancelGesture=std::move(cancel);state_->newTab=std::move(newTab);state_->closeTab=std::move(closeTab);}
 void BrowserHost::SetFocusHandler(std::function<void(bool)> handler){state_->focus=std::move(handler);}
 void BrowserHost::Focus(){if(state_->controller&&state_->visible&&!state_->occluded)state_->controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);}
-bool BrowserHost::SendMouseInput(UINT message,UINT keys,UINT data,POINT point){
-    auto s=state_;const int blocked=(!s->composition?1:0)|(!s->ready?2:0)|(!s->visible?4:0)|(s->occluded?8:0)|(s->waiting?16:0);
+bool BrowserHost::SendMouseInput(UINT message,UINT keys,UINT data,POINT point){return SendMouse(*state_,message,keys,data,point);}
+bool BrowserHost::SendMouse(State& state,UINT message,UINT keys,UINT data,POINT point){
+    auto* s=&state;const int blocked=(!s->composition?1:0)|(!s->ready?2:0)|(!s->visible?4:0)|(s->occluded?8:0)|(s->waiting?16:0);
     TraceBrowserInput("send-mouse-enter",message,blocked);
     if(blocked)return false;
     if(message==WM_MOUSELEAVE){keys=0;data=0;point={};}
     const auto result=s->composition->SendMouseInput(static_cast<COREWEBVIEW2_MOUSE_EVENT_KIND>(message),static_cast<COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS>(keys),data,point);
     TraceBrowserInput("send-mouse-result",message,result);
-    if(message!=WM_MOUSELEAVE){HCURSOR cursor=nullptr;if(SUCCEEDED(s->composition->get_Cursor(&cursor))&&cursor)SetCursor(cursor);}
     return SUCCEEDED(result);
+}
+void BrowserHost::SetWheelHandler(std::function<bool(int,UINT)> handler){state_->wheel=std::move(handler);}
+bool BrowserHost::HandleParentWheel(UINT message,WPARAM w,LPARAM l){
+    auto s=state_;if(!s->surface||(message!=WM_MOUSEWHEEL&&message!=WM_MOUSEHWHEEL))return false;
+    RECT rect{};POINT point{GET_X_LPARAM(l),GET_Y_LPARAM(l)};
+    if(!GetWindowRect(s->surface,&rect)||!PtInRect(&rect,point)||!IsWindowVisible(s->surface))return false;
+    return HandleSurfaceMouse(*s,message,w,l);
+}
+bool BrowserHost::HandleSurfaceMouse(State& s,UINT message,WPARAM w,LPARAM l){
+    if(GetWindowLongPtrW(s.parent,GWL_EXSTYLE)&(WS_EX_TRANSPARENT|WS_EX_NOACTIVATE))return false;
+    const bool wheel=message==WM_MOUSEWHEEL||message==WM_MOUSEHWHEEL;
+    const bool down=message==WM_LBUTTONDOWN||message==WM_RBUTTONDOWN||message==WM_MBUTTONDOWN||message==WM_XBUTTONDOWN||message==WM_LBUTTONDBLCLK||message==WM_RBUTTONDBLCLK||message==WM_MBUTTONDBLCLK||message==WM_XBUTTONDBLCLK;
+    const bool up=message==WM_LBUTTONUP||message==WM_RBUTTONUP||message==WM_MBUTTONUP||message==WM_XBUTTONUP;
+    if(!wheel&&!down&&!up&&message!=WM_MOUSEMOVE&&message!=WM_MOUSELEAVE)return false;
+    TraceBrowserInput("native-surface-mouse",message);
+    POINT point{GET_X_LPARAM(l),GET_Y_LPARAM(l)};
+    if(wheel)ScreenToClient(s.surface,&point);
+    UINT data=wheel?static_cast<UINT>(GET_WHEEL_DELTA_WPARAM(w)):(message==WM_XBUTTONDOWN||message==WM_XBUTTONUP||message==WM_XBUTTONDBLCLK?GET_XBUTTON_WPARAM(w):0);
+    if(message==WM_MOUSEWHEEL&&s.wheel){
+        UINT modifiers=0;if(GetKeyState(VK_CONTROL)&0x8000)modifiers|=MOD_CONTROL;if(GetKeyState(VK_MENU)&0x8000)modifiers|=MOD_ALT;if(GetKeyState(VK_SHIFT)&0x8000)modifiers|=MOD_SHIFT;if((GetKeyState(VK_LWIN)|GetKeyState(VK_RWIN))&0x8000)modifiers|=MOD_WIN;
+        if(s.wheel(GET_WHEEL_DELTA_WPARAM(w),modifiers))return true;
+    }
+    if(down&&s.controller){SetCapture(s.surface);s.controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);}
+    if(message==WM_MOUSEMOVE){TRACKMOUSEEVENT track{sizeof(track),TME_LEAVE,s.surface,0};TrackMouseEvent(&track);}
+    const UINT keys=GET_KEYSTATE_WPARAM(w);
+    const bool sent=SendMouse(s,message,keys,data,point);
+    if(sent){s.nativePoint=point;s.nativeButtons=keys&(MK_LBUTTON|MK_RBUTTON|MK_MBUTTON|MK_XBUTTON1|MK_XBUTTON2);}
+    if(up&&!(keys&(MK_LBUTTON|MK_RBUTTON|MK_MBUTTON|MK_XBUTTON1|MK_XBUTTON2))&&GetCapture()==s.surface)ReleaseCapture();
+    // Own this input even while a navigation is pending; do not bubble a wheel
+    // back to the parent and deliver the same user action a second time.
+    return true;
+}
+LRESULT CALLBACK BrowserHost::SurfaceProcedure(HWND hwnd,UINT message,WPARAM w,LPARAM l){
+    auto* s=reinterpret_cast<State*>(GetWindowLongPtrW(hwnd,GWLP_USERDATA));
+    if(message==WM_NCCREATE){s=static_cast<State*>(reinterpret_cast<CREATESTRUCTW*>(l)->lpCreateParams);SetWindowLongPtrW(hwnd,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(s));}
+    if(message==WM_NCDESTROY){SetWindowLongPtrW(hwnd,GWLP_USERDATA,0);return DefWindowProcW(hwnd,message,w,l);}
+    if(s)try{
+        if(message==WM_NCHITTEST){TraceBrowserInput("native-surface-hit");return GetWindowLongPtrW(s->parent,GWL_EXSTYLE)&WS_EX_TRANSPARENT?HTTRANSPARENT:HTCLIENT;}
+        if(message==WM_SETCURSOR&&LOWORD(l)==HTCLIENT){HCURSOR cursor=nullptr;if(s->composition)s->composition->get_Cursor(&cursor);SetCursor(cursor?cursor:LoadCursorW(nullptr,IDC_ARROW));return TRUE;}
+        if(message==WM_CAPTURECHANGED||message==WM_CANCELMODE){
+            for(auto pair:{std::pair<UINT,UINT>{MK_LBUTTON,WM_LBUTTONUP},{MK_RBUTTON,WM_RBUTTONUP},{MK_MBUTTON,WM_MBUTTONUP},{MK_XBUTTON1,WM_XBUTTONUP},{MK_XBUTTON2,WM_XBUTTONUP}}){
+                if(s->nativeButtons&pair.first){s->nativeButtons&=~pair.first;SendMouse(*s,pair.second,s->nativeButtons,pair.first==MK_XBUTTON1?XBUTTON1:pair.first==MK_XBUTTON2?XBUTTON2:0,s->nativePoint);}
+            }
+            if(message==WM_CANCELMODE&&GetCapture()==hwnd)ReleaseCapture();
+        }
+        if(HandleSurfaceMouse(*s,message,w,l))return message==WM_XBUTTONDOWN||message==WM_XBUTTONUP||message==WM_XBUTTONDBLCLK?TRUE:0;
+    }catch(...){TraceBrowserInput("native-input-exception",message);}
+    return DefWindowProcW(hwnd,message,w,l);
 }
 void BrowserHost::GoBack() {if(CanGoBack()){if(state_->cancelGesture)state_->cancelGesture();state_->view->GoBack();}}
 bool BrowserHost::CanGoBack() const {BOOL can=FALSE;if(state_->view)state_->view->get_CanGoBack(&can);return can!=FALSE;}

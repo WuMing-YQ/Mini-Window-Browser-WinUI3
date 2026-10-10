@@ -25,6 +25,8 @@ public:
     void SetFocusHandler(std::function<void(bool)>);
     void Focus();
     bool SendMouseInput(UINT message,UINT keys,UINT data,POINT point);
+    bool HandleParentWheel(UINT,WPARAM,LPARAM);
+    void SetWheelHandler(std::function<bool(int,UINT)>);
     void GoBack();
     bool CanGoBack() const;
     void RefreshOrStop();
@@ -32,6 +34,9 @@ public:
     std::wstring RuntimeVersion()const override;
 private:
     struct State;
+    static LRESULT CALLBACK SurfaceProcedure(HWND,UINT,WPARAM,LPARAM);
+    static bool SendMouse(State&,UINT,UINT,UINT,POINT);
+    static bool HandleSurfaceMouse(State&,UINT,WPARAM,LPARAM);
     static void ConfigureEvents(const std::shared_ptr<State>&,uint64_t);
     std::shared_ptr<State> state_;
 };

@@ -119,6 +119,7 @@ Windows::Foundation::IAsyncAction MainWindow::InitializeBrowserAsync() {
         browser_=std::make_unique<miniwindow::BrowserHost>(hwnd_,profile_,[weak=get_weak()](bool ready,bool loading,std::wstring error){
             if(auto self=weak.get();self&&!self->closed_) {if(!ready&&!error.empty()){self->windowService_->RestoreNormal();self->SyncWindowState();}self->coordinator_->OnBrowserState(ready,loading,error);self->LayoutBrowser();}
         });
+        browser_->SetWheelHandler([weak=get_weak()](int delta,UINT modifiers){if(auto self=weak.get();self&&!self->closed_&&self->input_)return self->input_->TryHandleWheel(delta,modifiers);return false;});
         browserPort_.host=browser_.get();auto runningSettings=state_.settings;runningSettings.renderMode=coordinator_->RunningRenderMode();browser_->Configure(runningSettings);
         browser_->SetDocumentHandler([weak=get_weak()](std::wstring url,std::wstring title){if(auto self=weak.get();self&&!self->closed_){self->coordinator_->OnDocument(std::move(url),std::move(title));}});
         browser_->SetFocusHandler([weak=get_weak()](bool focused){if(auto self=weak.get();self&&!self->closed_){self->webFocused_=focused;self->RefreshOwnedFocus();}});
@@ -174,6 +175,7 @@ LRESULT CALLBACK MainWindow::WindowProcedure(HWND hwnd,UINT message,WPARAM param
     if(message==WM_NCHITTEST||message==WM_LBUTTONDOWN||message==WM_MOUSEWHEEL||message==WM_POINTERDOWN)miniwindow::TraceBrowserInput("native-main",message);
     if(self->input_)self->input_->OnMessage(message,parameter,data);
     if(self->tray_)self->tray_->HandleMessage(message,parameter,data);
+    if(self->browser_&&(message==WM_MOUSEWHEEL||message==WM_MOUSEHWHEEL)&&self->browser_->HandleParentWheel(message,parameter,data))return 0;
     if(self->windowService_) {
         if(message==WM_SYSCOMMAND){const auto command=parameter&0xfff0;if(command==SC_MAXIMIZE){self->MaximizeClick(nullptr,nullptr);return 0;}if(command==SC_RESTORE&&self->windowService_->Mode()==miniwindow::WindowMode::Maximized){self->MaximizeClick(nullptr,nullptr);return 0;}if(command==SC_MINIMIZE&&self->state_.settings.useSystemTray){self->HideClick(nullptr,nullptr);return 0;}}
         if(message==WM_ACTIVATE&&LOWORD(parameter)!=WA_INACTIVE)self->windowService_->ReassertTopmost();
