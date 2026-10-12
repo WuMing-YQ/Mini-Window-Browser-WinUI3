@@ -27,6 +27,7 @@ struct AppSnapshot {
 struct IBrowserPort {
     virtual ~IBrowserPort()=default;
     virtual OperationResult Navigate(const std::wstring&)=0;
+    virtual OperationResult SyncTabs(const std::vector<xiaochuang::TabData>& tabs,size_t active){return Navigate(tabs.at(active).url); }
     virtual void SetVisible(bool)=0;
     virtual void ExecuteMedia(MediaCommand,int)=0;
     virtual void Close()=0;

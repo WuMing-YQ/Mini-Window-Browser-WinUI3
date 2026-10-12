@@ -12,8 +12,6 @@ inline OperationResult ValidateSettings(const AppSettings& value){
  if(value.snapThreshold<0||value.snapThreshold>200)return {false,L"吸附距离须为 0–200。"};
  if(value.holdPlaybackRate<2||value.holdPlaybackRate>5)return {false,L"长按倍速须为 2–5。"};
  if(value.holeOpacityPercent<0||value.holeOpacityPercent>100||value.autoHideOpacityPercent<0||value.autoHideOpacityPercent>100||value.hoverReductionPercent<0||value.hoverReductionPercent>100)return {false,L"不透明度与减淡比例须为 0–100%。"};
- constexpr UINT allowed=MOD_CONTROL|MOD_ALT|MOD_SHIFT|MOD_WIN;
- if(!value.windowWheelModifiers||(value.windowWheelModifiers&~allowed))return {false,L"滚轮组合键至少选择一个修饰键。"};
  if(value.immersionStyle!=ImmersionStyle::Hole&&value.immersionStyle!=ImmersionStyle::AutoHide)return {false,L"无效的沉浸模式。"};
  if(value.renderMode!=xiaochuang::RenderMode::AutomaticGpu&&value.renderMode!=xiaochuang::RenderMode::SoftwareCompatibility)return {false,L"无效的渲染模式。"};
  if(value.themeMode!=xiaochuang::ThemeMode::System&&value.themeMode!=xiaochuang::ThemeMode::Light&&value.themeMode!=xiaochuang::ThemeMode::Dark)return {false,L"无效的主题。"};

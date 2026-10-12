@@ -35,7 +35,7 @@ OperationResult WindowService::SetMode(WindowMode mode) {
 OperationResult WindowService::SetHidden(bool hidden) {return Change(hidden?WindowMode::Hidden:(controller_.IsImmersive()?(settings_.immersionStyle==ImmersionStyle::Hole?WindowMode::ImmersionHole:WindowMode::ImmersionAutoHide):(controller_.IsSeamlessMaximized()?WindowMode::Maximized:WindowMode::Normal)),[&]{controller_.SetHidden(hidden);});}
 OperationResult WindowService::RestoreNormal(){return SetMode(WindowMode::Normal);}
 OperationResult WindowService::ApplyGeometry(RECT rect,bool maximized){return Change(maximized?WindowMode::Maximized:WindowMode::Normal,[&]{controller_.SetHidden(false);controller_.ApplyPresetGeometry(rect,maximized);});}
-OperationResult WindowService::ResizeNormal(RECT rect){if(controller_.Mode()!=WindowMode::Normal||controller_.IsHidden()||IsIconic(hwnd_))return {false,L"当前窗口不允许滚轮调整大小。"};return Change(WindowMode::Normal,[&]{controller_.RestoreGeometry(rect);controller_.UpdateNormalRectFromWindow();});}
+OperationResult WindowService::ResizeNormal(RECT rect){if(controller_.IsHidden()||IsIconic(hwnd_))return {false,L"当前窗口不可调整。"};return Change(controller_.Mode(),[&]{controller_.ResizeWindow(rect);});}
 OperationResult WindowService::RefreshVisuals(){return Change(controller_.Mode(),[&]{controller_.SetSystemTray(settings_.useSystemTray);controller_.RefreshVisualState();});}
 OperationResult WindowService::RestoreForDrag(POINT cursor) {
     if(!settings_.maximizedTopDragEnabled||controller_.IsHidden()||!controller_.IsSeamlessMaximized())return {false,L"最大化顶部拖动未启用。"};
@@ -46,6 +46,8 @@ void WindowService::OnWebFullscreen(bool fullscreen,double aspect){Change(contro
 void WindowService::HandleMessage(UINT message,WPARAM parameter,LPARAM data) {
     if(message==WM_TIMER&&parameter==xiaochuang::kImmersionTimerId){controller_.ClearOperationError();controller_.OnImmersionTimer();if(!controller_.OperationError().empty()){auto failure=controller_.OperationError();RestoreNormal();recoveryForced_=true;SyncRecovery(false,false);if(error_)error_(failure);}}
     else if(message==WM_MOVE||message==WM_SIZE){controller_.UpdateNormalRectFromWindow();}
+    else if(message==WM_ENTERSIZEMOVE)controller_.BeginMove();
+    else if(message==WM_EXITSIZEMOVE)controller_.EndMove();
     else if(message==WM_MOVING)controller_.SnapMovingRect(reinterpret_cast<RECT*>(data),(GetKeyState(VK_CONTROL)&0x8000)!=0);
     else if(message==WM_SIZING)controller_.ConstrainWebFullscreenSizing(static_cast<UINT>(parameter),reinterpret_cast<RECT*>(data));
     else if(message==WM_DISPLAYCHANGE){if(controller_.IsSeamlessMaximized())ApplyGeometry(controller_.NormalRect(),true);}

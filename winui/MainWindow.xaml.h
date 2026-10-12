@@ -1,5 +1,6 @@
 #pragma once
 #include "MainWindow.g.h"
+#include <map>
 #include <winrt/Windows.UI.ViewManagement.h>
 #include "browser/BrowserHost.h"
 #include "settings/VersionedConfigStore.h"
@@ -52,7 +53,18 @@ private:
     bool AcquireProfile(const std::filesystem::path&);
     HWND hwnd_=nullptr;
     xiaochuang::AppState state_;
-    std::unique_ptr<miniwindow::BrowserHost> browser_;
+    struct LiveTab {
+        std::shared_ptr<miniwindow::BrowserHost> host;
+        bool ready=false,loading=false,fullscreen=false;
+        double aspect=0;
+        std::wstring error;
+    };
+    std::map<uint64_t,std::shared_ptr<LiveTab>> liveTabs_;
+    uint64_t activeTabId_=0;
+    std::shared_ptr<miniwindow::BrowserHost> browser_;
+    miniwindow::OperationResult SyncBrowserTabs();
+    winrt::fire_and_forget InitializeTabAsync(uint64_t,std::shared_ptr<LiveTab>);
+    void ApplyTabFullscreen();
     Windows::Foundation::IAsyncAction initialization_{nullptr};
     std::unique_ptr<miniwindow::VersionedConfigStore> settings_;
     std::unique_ptr<miniwindow::WindowService> windowService_;

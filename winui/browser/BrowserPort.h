@@ -4,6 +4,8 @@ namespace miniwindow {
 // The coordinator retains this stable port while a failed browser host is rebuilt.
 struct BrowserPort final:IBrowserPort {
  BrowserHost* host=nullptr;
+ std::function<OperationResult()> syncTabs;
+ OperationResult SyncTabs(const std::vector<xiaochuang::TabData>&,size_t)override{return syncTabs?syncTabs():OperationResult{};}
  OperationResult Navigate(const std::wstring& url)override{return host?host->Navigate(url):OperationResult{false,L"浏览器正在初始化。"};}
  void SetVisible(bool visible)override{if(host)host->SetVisible(visible);}
  void ExecuteMedia(MediaCommand command,int rate)override{if(host)host->ExecuteMedia(command,rate);}

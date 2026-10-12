@@ -48,6 +48,6 @@
   <ItemGroup><ClCompile Include="..\window\WindowService.cpp"><PrecompiledHeader>NotUsing</PrecompiledHeader></ClCompile><ClCompile Include="..\window\TrayController.cpp"><PrecompiledHeader>NotUsing</PrecompiledHeader></ClCompile><ClCompile Include="..\..\src\WindowModeController.cpp"><PrecompiledHeader>NotUsing</PrecompiledHeader></ClCompile><ClCompile Include="..\..\src\CoreLogic.cpp"><PrecompiledHeader>NotUsing</PrecompiledHeader></ClCompile></ItemGroup>
   <ItemGroup><ClCompile Include="..\input\InputService.cpp"><PrecompiledHeader>NotUsing</PrecompiledHeader></ClCompile><ClCompile Include="..\..\src\HotkeyManager.cpp"><PrecompiledHeader>NotUsing</PrecompiledHeader></ClCompile></ItemGroup>
   <ItemGroup><ClCompile Include="..\..\src\Diagnostics.cpp"><PrecompiledHeader>NotUsing</PrecompiledHeader></ClCompile></ItemGroup>
-  <ItemGroup><ClCompile Include="..\input\WindowWheelPolicy.cpp" /></ItemGroup>
+  <ItemGroup><ClCompile Include="..\input\WindowSizePolicy.cpp" /></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

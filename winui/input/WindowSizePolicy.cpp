@@ -1,12 +1,7 @@
-#include "WindowWheelPolicy.h"
+#include "WindowSizePolicy.h"
 #include <algorithm>
 #include <cmath>
 namespace miniwindow {
-bool ShouldResizeWindow(const WheelContext& context,UINT configured){
- constexpr UINT mask=MOD_CONTROL|MOD_ALT|MOD_SHIFT|MOD_WIN;
- return configured!=0&&(configured&~mask)==0&&context.modifiers==configured&&context.mode==WindowMode::Normal&&!context.hidden&&!context.maximized&&context.mainOrWebFocused&&!context.managementFocused;
-}
-int WindowWheelAccumulator::Add(int delta){const auto total=static_cast<long long>(remainder_)+delta;const auto steps=total/WHEEL_DELTA;remainder_=static_cast<int>(total%WHEEL_DELTA);return static_cast<int>(steps);}
 namespace {
 LONG ResizeAxis(LONG start,LONG end,LONG low,LONG high,LONG size,int snapDistance){
  const LONG tolerance=std::max(1,snapDistance);
@@ -39,5 +34,4 @@ RECT ResizeWindowBySteps(RECT current,int steps,RECT area,SIZE minimum,int snapD
  const LONG top=ResizeAxis(current.top,current.bottom,area.top,area.bottom,resizedHeight,snapDistance);
  return {left,top,left+resizedWidth,top+resizedHeight};
 }
-std::wstring WheelModifierLabel(UINT modifiers){std::wstring text;for(auto item:{std::pair<UINT,const wchar_t*>{MOD_CONTROL,L"Ctrl"},{MOD_ALT,L"Alt"},{MOD_SHIFT,L"Shift"},{MOD_WIN,L"Win"}})if(modifiers&item.first){if(!text.empty())text+=L"+";text+=item.second;}return text;}
 }

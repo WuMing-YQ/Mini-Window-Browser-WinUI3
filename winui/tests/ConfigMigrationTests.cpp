@@ -26,12 +26,12 @@ void ConfigMigrationTests() {
     CHECK(preset.normalRect.left==-1234 && preset.normalRect.top==70 && preset.normalRect.right==-434 && preset.normalRect.bottom==520 && preset.maximized);
     CHECK(preset.immersionStyle==miniwindow::ImmersionStyle::AutoHide && preset.tabs[0].title==L"中文🚀");
     CHECK(!preset.hotkeys[1].enabled && preset.hotkeys[1].virtualKey==66);
-    state.settings.hoverReductionPercent=50;state.settings.windowWheelModifiers=MOD_SHIFT|MOD_ALT;
-    state.presets[0].hoverReductionPercent=25;state.presets[0].windowWheelEnabled=false;
+    state.settings.hoverReductionPercent=50;
+    state.presets[0].hoverReductionPercent=25;
     CHECK(store.Save(state).ok);
     miniwindow::AppState second;CHECK(store.LoadOrMigrate(second).ok);
-    CHECK(second.settings.hoverReductionPercent==50 && second.settings.windowWheelModifiers==(MOD_SHIFT|MOD_ALT));
-    CHECK(second.presets[0].hoverReductionPercent==25 && !second.presets[0].windowWheelEnabled);
+    CHECK(second.settings.hoverReductionPercent==50);
+    CHECK(second.presets[0].hoverReductionPercent==25);
     size_t backups=0;for(const auto& item:std::filesystem::directory_iterator(directory.path))if(item.path().filename().wstring().starts_with(L"config.legacy-backup-"))++backups;
     CHECK(backups==1);
     const auto saved=Bytes(target);SetFileAttributesW(target.c_str(),FILE_ATTRIBUTE_READONLY);

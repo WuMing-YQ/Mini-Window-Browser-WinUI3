@@ -27,7 +27,6 @@ public:
     void CancelMouseInput();
     bool SendMouseInput(UINT message,UINT keys,UINT data,POINT point);
     bool HandleParentWheel(UINT,WPARAM,LPARAM);
-    void SetWheelHandler(std::function<bool(int,UINT)>);
     void GoBack();
     bool CanGoBack() const;
     void RefreshOrStop();

@@ -34,7 +34,7 @@ public:
     bool Start(HWND window, std::array<HotkeyBinding, kHotkeyCount>* bindings,
                ActionCallback callback);
     void Stop();
-    void Refresh(bool hidden, bool backgroundMediaHotkeys, bool inputSuppressed);
+    void Refresh(bool hidden, bool backgroundMediaHotkeys, bool inputSuppressed, bool immersive=false);
     bool HandleHotkeyMessage(int identifier);
     bool HandleMouseMessage(WPARAM virtualKey, LPARAM packedState);
     bool HandleKeyboardMessage(WPARAM virtualKey, LPARAM packedState);
@@ -95,6 +95,7 @@ private:
     CaptureCallback captureCallback_;
     std::optional<PendingGesture> pending_;
     std::vector<std::wstring> registrationErrors_;
+    bool immersive_ = false;
     bool hidden_ = false;
     bool backgroundMediaHotkeys_ = false;
     bool inputSuppressed_ = false;

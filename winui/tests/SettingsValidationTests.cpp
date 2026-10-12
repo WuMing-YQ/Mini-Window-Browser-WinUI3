@@ -13,7 +13,7 @@ void SettingsValidationTests(){
  draft=state.settings;draft.homeUrl=L" \t ";CHECK(!app.UpdateSettings(draft).ok);CHECK(!state.settings.homeUrl.empty());
  draft=state.settings;draft.homeUrl=L" example.org ";CHECK(app.UpdateSettings(draft).ok);CHECK(state.settings.homeUrl==L"https://example.org");
  draft=state.settings;draft.holdPlaybackRate=1;CHECK(!app.UpdateSettings(draft).ok);draft=state.settings;draft.holeRadius=4001;CHECK(!app.UpdateSettings(draft).ok);
- draft=state.settings;draft.windowWheelModifiers=0;CHECK(!app.UpdateSettings(draft).ok);draft=state.settings;draft.snapThreshold=-1;CHECK(!app.UpdateSettings(draft).ok);
+ draft=state.settings;draft.snapThreshold=-1;CHECK(!app.UpdateSettings(draft).ok);
  draft=state.settings;draft.renderMode=xiaochuang::RenderMode::SoftwareCompatibility;CHECK(app.UpdateSettings(draft).ok);CHECK(app.Snapshot().pendingRestart);
  draft.renderMode=xiaochuang::RenderMode::AutomaticGpu;CHECK(app.UpdateSettings(draft).ok);CHECK(!app.Snapshot().pendingRestart);
  store.fail=true;draft=state.settings;draft.holdPlaybackRate=5;CHECK(!app.UpdateSettings(draft).ok);CHECK(state.settings.holdPlaybackRate==3);store.fail=false;

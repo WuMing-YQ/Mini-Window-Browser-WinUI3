@@ -7,6 +7,7 @@
 #include "management/UIHelpers.h"
 #include "window/ThemeSync.h"
 #include "input/OwnedFocus.h"
+#include "input/WindowSizePolicy.h"
 #include <commctrl.h>
 #include <wil/resource.h>
 #include <windowsx.h>
@@ -69,7 +70,8 @@ MainWindow::MainWindow() {
     SetWindowSubclass(hwnd_,WindowProcedure,1,reinterpret_cast<DWORD_PTR>(this));
     themeToken_=systemTheme_.ColorValuesChanged([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get())self->DispatcherQueue().TryEnqueue([weak]{if(auto window=weak.get();window&&!window->closed_)window->windowService_->RefreshTheme(window->state_.settings.themeMode);});});
     coordinator_=std::make_unique<miniwindow::AppCoordinator>(browserPort_,*windowService_,*settings_,state_);
-    coordinator_->SetRuntimeHandler([weak=get_weak()]()->miniwindow::OperationResult{if(auto self=weak.get()){if(self->input_){auto result=self->input_->ReloadBindings();if(!result.ok)return result;}if(self->browser_){auto result=self->browser_->Configure(self->state_.settings);if(!result.ok)return result;}self->windowService_->RefreshTheme(self->state_.settings.themeMode);return self->windowService_->RefreshVisuals();}return {false,L"窗口已关闭。"};});
+    coordinator_->SetRuntimeHandler([weak=get_weak()]()->miniwindow::OperationResult{if(auto self=weak.get()){if(self->input_){auto result=self->input_->ReloadBindings();if(!result.ok)return result;}for(auto& [id,tab]:self->liveTabs_){auto result=tab->host->Configure(self->state_.settings);if(!result.ok)return result;}self->windowService_->RefreshTheme(self->state_.settings.themeMode);return self->windowService_->RefreshVisuals();}return {false,L"窗口已关闭。"};});
+    browserPort_.syncTabs=[weak=get_weak()](){if(auto self=weak.get();self&&!self->closed_)return self->SyncBrowserTabs();return miniwindow::OperationResult{false,L"窗口已关闭。"};};
     coordinator_->Subscribe([weak=get_weak()](const auto& snapshot){if(auto self=weak.get();self&&!self->closed_)self->RenderSnapshot(snapshot);});
     InitializeChrome();
     input_=std::make_unique<miniwindow::InputService>(hwnd_,state_,[weak=get_weak()](auto action,auto gesture){if(auto self=weak.get();self&&!self->closed_)self->HandleHotkey(action,gesture);});
@@ -79,15 +81,10 @@ MainWindow::MainWindow() {
     Root().PreviewKeyDown([weak=get_weak()](auto&&,Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const& args){if(auto self=weak.get();self&&!self->closed_&&self->input_&&self->input_->CaptureKey(static_cast<UINT>(args.Key()),miniwindow::CurrentKeyModifiers()))args.Handled(true);});
     input_->SetCaptureHandler([weak=get_weak()](auto action,auto binding){if(auto self=weak.get();self&&!self->closed_)self->coordinator_->UpdateHotkey(action,binding);});
     coordinator_->SetHotkeyValidator([weak=get_weak()](auto action,const auto& binding){if(auto self=weak.get();self&&!self->closed_)return self->input_->ValidateBinding(action,binding);return miniwindow::OperationResult{false,L"窗口已关闭。"};});
-    input_->SetWheelHandler([weak=get_weak()](int steps)->miniwindow::OperationResult{if(auto self=weak.get();self&&!self->closed_){RECT current{};MONITORINFO monitor{sizeof(monitor)};if(!GetWindowRect(self->hwnd_,&current)||!GetMonitorInfoW(MonitorFromWindow(self->hwnd_,MONITOR_DEFAULTTONEAREST),&monitor))return {false,L"无法读取窗口工作区。"};const auto dpi=GetDpiForWindow(self->hwnd_);const auto frame=xiaochuang::ReadWindowFrameInsets(self->hwnd_);
-        const SIZE minimum{std::max(1L,MulDiv(160,dpi,96)-frame.left-frame.right),std::max(1L,MulDiv(120,dpi,96)-frame.top-frame.bottom)};
-        const auto target=miniwindow::ResizeWindowBySteps(frame.Visible(current),steps,monitor.rcMonitor,minimum,self->state_.settings.snapThreshold);
-        return self->windowService_->ResizeNormal(frame.Outer(target));}return {false,L"窗口已关闭。"};});
-    Root().AddHandler(Microsoft::UI::Xaml::UIElement::PointerWheelChangedEvent(),box_value(Microsoft::UI::Xaml::Input::PointerEventHandler([weak=get_weak()](auto&&,Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args){if(auto self=weak.get();self&&!self->closed_){const auto point=args.GetCurrentPoint(self->Root());if(!args.Handled()&&!point.Properties().IsHorizontalMouseWheel()&&self->input_->TryHandleWheel(point.Properties().MouseWheelDelta(),miniwindow::CurrentKeyModifiers()))args.Handled(true);}})),true);
     InitializeBrowserInput();
     input_->Start();
     Root().Loaded([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get();self&&!self->closed_)self->StartBrowser();});
-    Closed([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get()){self->closed_=true;if(self->management_)self->management_->Shutdown();if(self->immersionPanel_)self->immersionPanel_->Shutdown();if(self->coordinator_)self->coordinator_->Subscribe({});self->browserPort_.host=nullptr;if(self->input_)self->input_->Stop();self->systemTheme_.ColorValuesChanged(self->themeToken_);RemoveWindowSubclass(self->hwnd_,WindowProcedure,1);self->windowService_.reset();self->tray_.reset();if(self->browser_)self->browser_->Close();if(self->initialization_)self->initialization_.Cancel();self->browser_.reset();if(self->profileLock_){CloseHandle(self->profileLock_);self->profileLock_=nullptr;}}});
+    Closed([weak=get_weak()](auto&&,auto&&){if(auto self=weak.get()){self->closed_=true;if(self->management_)self->management_->Shutdown();if(self->immersionPanel_)self->immersionPanel_->Shutdown();if(self->coordinator_)self->coordinator_->Subscribe({});self->browserPort_.host=nullptr;if(self->input_)self->input_->Stop();self->systemTheme_.ColorValuesChanged(self->themeToken_);RemoveWindowSubclass(self->hwnd_,WindowProcedure,1);self->windowService_.reset();self->tray_.reset();for(auto& [id,tab]:self->liveTabs_)tab->host->Close();self->liveTabs_.clear();if(self->initialization_)self->initialization_.Cancel();self->browser_.reset();if(self->profileLock_){CloseHandle(self->profileLock_);self->profileLock_=nullptr;}}});
 }
 void MainWindow::SetDialogActive(bool active){if(active)WebSlot().ReleasePointerCaptures();dialogDepth_=std::max(0,dialogDepth_+(active?1:-1));if(browser_)browser_->SetOccluded(dialogDepth_>0);}
 void MainWindow::ShowError(const std::wstring& error) {const auto message=configError_+(configError_.empty()?L"":L"\n")+inputError_+error;ErrorText().Text(message);ErrorPanel().Visibility(message.empty()||(windowService_&&windowService_->Immersive())?Microsoft::UI::Xaml::Visibility::Collapsed:Microsoft::UI::Xaml::Visibility::Visible);}
@@ -102,7 +99,7 @@ void MainWindow::StartBrowser() {if(closed_||starting_)return;starting_=true;ini
 Windows::Foundation::IAsyncAction MainWindow::InitializeBrowserAsync() {
     auto lifetime=get_strong();
     try {
-        webFocused_=false;browserPort_.host=nullptr;if(browser_)browser_->Close();
+
         if(profile_.empty()) {
             const auto legacy=directory_/L"XiaoChuang.exe.WebView2";
             auto candidate=std::filesystem::exists(legacy)?legacy:directory_/L"data"/L"webview-profile";
@@ -117,20 +114,84 @@ Windows::Foundation::IAsyncAction MainWindow::InitializeBrowserAsync() {
             }
         }
         if(closed_)co_return;
-        browser_=std::make_unique<miniwindow::BrowserHost>(hwnd_,profile_,[weak=get_weak()](bool ready,bool loading,std::wstring error){
-            if(auto self=weak.get();self&&!self->closed_) {if(!ready&&!error.empty()){self->windowService_->RestoreNormal();self->SyncWindowState();}self->coordinator_->OnBrowserState(ready,loading,error);self->LayoutBrowser();}
-        });
-        browser_->SetWheelHandler([weak=get_weak()](int delta,UINT modifiers){if(auto self=weak.get();self&&!self->closed_&&self->input_)return self->input_->TryHandleWheel(delta,modifiers);return false;});
-        browserPort_.host=browser_.get();auto runningSettings=state_.settings;runningSettings.renderMode=coordinator_->RunningRenderMode();browser_->Configure(runningSettings);
-        browser_->SetDocumentHandler([weak=get_weak()](std::wstring url,std::wstring title){if(auto self=weak.get();self&&!self->closed_){self->coordinator_->OnDocument(std::move(url),std::move(title));}});
-        browser_->SetFocusHandler([weak=get_weak()](bool focused){if(auto self=weak.get();self&&!self->closed_){self->webFocused_=focused;self->RefreshOwnedFocus();}});
-        browser_->SetNavigationHandlers([weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_){self->input_->CancelGesture();}},[weak=get_weak()](std::wstring url){if(auto self=weak.get();self&&!self->closed_){self->coordinator_->AddTab(std::move(url));}},[weak=get_weak()]{if(auto self=weak.get();self&&!self->closed_){self->input_->CancelGesture();self->coordinator_->CloseTab(static_cast<size_t>(self->state_.currentTabIndex));}});
-        browser_->SetPageSignalHandler([weak=get_weak()](miniwindow::PageSignal signal){if(auto self=weak.get();self&&!self->closed_){if(signal.kind==miniwindow::PageSignal::Fullscreen){self->webFullscreen_=signal.flag;self->windowService_->OnWebFullscreen(signal.flag);self->input_->SetImmersiveWebFullscreen(signal.flag&&self->windowService_->Immersive());}else if(signal.kind==miniwindow::PageSignal::VideoAspect&&self->webFullscreen_)self->windowService_->OnWebFullscreen(true,signal.aspect);}});
-        LayoutBrowser();browser_->Navigate(state_.tabs[static_cast<size_t>(state_.currentTabIndex)].url);
-        co_await browser_->InitializeAsync();
+        SyncBrowserTabs();
     }catch(const winrt::hresult_error& error){if(!closed_)ShowError(std::wstring(error.message()));}
     catch(const std::exception&){if(!closed_)ShowError(L"浏览器数据目录初始化失败。");}
     starting_=false;
+}
+miniwindow::OperationResult MainWindow::SyncBrowserTabs(){
+    if(closed_||profile_.empty())return {};
+    const auto& active=state_.tabs.at(static_cast<size_t>(state_.currentTabIndex));
+    const uint64_t id=active.runtimeId;
+    const bool switched=id!=activeTabId_;
+    if(switched){
+        if(input_)input_->CancelGesture();WebSlot().ReleasePointerCaptures();browserButtons_=0;
+        if(browser_){browser_->CancelMouseInput();browser_->SetOccluded(true);}
+        windowService_->OnWebFullscreen(false);webFullscreen_=false;webFocused_=false;
+        activeTabId_=id;browser_.reset();browserPort_.host=nullptr;
+    }
+    for(auto it=liveTabs_.begin();it!=liveTabs_.end();){
+        const auto exists=std::any_of(state_.tabs.begin(),state_.tabs.end(),[&](const auto& tab){return tab.runtimeId==it->first;});
+        if(exists){++it;continue;}
+        auto removed=it->second;it=liveTabs_.erase(it);removed->host->Close();
+    }
+    auto found=liveTabs_.find(id);
+    if(found==liveTabs_.end()){
+        auto tab=std::make_shared<LiveTab>();liveTabs_.emplace(id,tab);
+        // The coroutine owns the record until initialization completes, even if
+        // the user closes this tab during WebView2's asynchronous creation.
+        InitializeTabAsync(id,tab);
+    }else{
+        auto tab=found->second;browser_=tab->host;browserPort_.host=browser_.get();
+        browser_->SetOccluded(dialogDepth_>0);LayoutBrowser();
+        coordinator_->OnBrowserState(tab->ready,tab->loading,tab->error);
+        if(switched)ApplyTabFullscreen();
+    }
+    return {};
+}
+void MainWindow::ApplyTabFullscreen(){
+    const auto found=liveTabs_.find(activeTabId_);if(found==liveTabs_.end())return;
+    const auto& tab=*found->second;webFullscreen_=tab.fullscreen;
+    windowService_->OnWebFullscreen(tab.fullscreen,tab.aspect);
+    SyncWindowState();
+    input_->SetImmersiveWebFullscreen(tab.fullscreen&&windowService_->Immersive());
+}
+winrt::fire_and_forget MainWindow::InitializeTabAsync(uint64_t id,std::shared_ptr<LiveTab> tab){
+    auto lifetime=get_strong();
+    const auto weak=get_weak();
+    auto current=[weak,id,record=std::weak_ptr<LiveTab>(tab)]()->com_ptr<MainWindow>{
+        auto self=weak.get();if(!self||self->closed_)return {};
+        auto found=self->liveTabs_.find(id);
+        return found!=self->liveTabs_.end()&&found->second==record.lock()?self:nullptr;
+    };
+    try{
+        tab->host=std::make_shared<miniwindow::BrowserHost>(hwnd_,profile_,[current,id](bool ready,bool loading,std::wstring error){
+            if(auto self=current()){
+                auto tab=self->liveTabs_.at(id);tab->ready=ready;tab->loading=loading;tab->error=error;
+                if(self->activeTabId_==id){if(!ready&&!error.empty()){self->windowService_->RestoreNormal();self->SyncWindowState();}self->coordinator_->OnBrowserState(ready,loading,error);self->LayoutBrowser();}
+            }
+        });
+        auto host=tab->host;
+        auto settings=state_.settings;settings.renderMode=coordinator_->RunningRenderMode();host->Configure(settings);
+        host->SetDocumentHandler([current,id](std::wstring url,std::wstring title){if(auto self=current())self->coordinator_->OnDocument(std::move(url),std::move(title),id);});
+        host->SetFocusHandler([current,id](bool focused){if(auto self=current();self&&self->activeTabId_==id){self->webFocused_=focused;self->RefreshOwnedFocus();}});
+        host->SetNavigationHandlers([current,id]{if(auto self=current();self&&self->activeTabId_==id)self->input_->CancelGesture();},
+            [current](std::wstring url){if(auto self=current())self->coordinator_->AddTab(std::move(url));},
+            [current,id]{if(auto self=current()){auto found=std::find_if(self->state_.tabs.begin(),self->state_.tabs.end(),[&](const auto& t){return t.runtimeId==id;});if(found!=self->state_.tabs.end())self->coordinator_->CloseTab(static_cast<size_t>(found-self->state_.tabs.begin()));}});
+        host->SetPageSignalHandler([current,id](miniwindow::PageSignal signal){if(auto self=current()){
+            auto tab=self->liveTabs_.at(id);
+            if(signal.kind==miniwindow::PageSignal::Fullscreen){if(tab->fullscreen==signal.flag)return;tab->fullscreen=signal.flag;if(!signal.flag)tab->aspect=0;}
+            else {if(std::abs(tab->aspect-signal.aspect)<0.001)return;tab->aspect=signal.aspect;}
+            if(self->activeTabId_==id)self->ApplyTabFullscreen();
+        }});
+        host->SetBounds(BrowserBounds());host->SetOccluded(id!=activeTabId_||dialogDepth_>0);
+        if(id==activeTabId_){browser_=host;browserPort_.host=host.get();}
+        auto model=std::find_if(state_.tabs.begin(),state_.tabs.end(),[&](const auto& t){return t.runtimeId==id;});
+        if(model==state_.tabs.end())co_return;
+        host->Navigate(model->url);
+        co_await host->InitializeAsync();
+    }catch(const winrt::hresult_error& error){if(auto self=current()){tab->error=error.message();if(self->activeTabId_==id){self->windowService_->RestoreNormal();self->SyncWindowState();self->coordinator_->OnBrowserState(false,false,tab->error);}}}
+    catch(...){if(auto self=current()){tab->error=L"网页标签初始化失败，请重试。";if(self->activeTabId_==id){self->windowService_->RestoreNormal();self->SyncWindowState();self->coordinator_->OnBrowserState(false,false,tab->error);}}}
 }
 Windows::Foundation::IAsyncAction MainWindow::ConfirmCloseAsync(std::wstring error) {
     auto lifetime=get_strong();SetDialogActive(true);auto occlusion=wil::scope_exit([this]{SetDialogActive(false);});
@@ -158,7 +219,11 @@ void MainWindow::NavigateClick(Windows::Foundation::IInspectable const&,Microsof
     if(!browser_)return;
     coordinator_->Navigate(std::wstring(Address().Text()));if(coordinator_->Snapshot().error.empty())browser_->Focus();
 }
-void MainWindow::RetryClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&) {StartBrowser();}
+void MainWindow::RetryClick(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::RoutedEventArgs const&) {
+    auto found=liveTabs_.find(activeTabId_);
+    if(found!=liveTabs_.end()) {auto tab=found->second;liveTabs_.erase(found);activeTabId_=0;browserPort_.host=nullptr;browser_.reset();tab->host->Close();windowService_->OnWebFullscreen(false);}
+    StartBrowser();
+}
 void MainWindow::WebSlotSizeChanged(Windows::Foundation::IInspectable const&,Microsoft::UI::Xaml::SizeChangedEventArgs const&) {LayoutBrowser();}
 void MainWindow::ApplyFrame(miniwindow::WindowMode mode) {
     if(mode==miniwindow::WindowMode::Hidden)return;
@@ -200,6 +265,7 @@ LRESULT CALLBACK MainWindow::WindowProcedure(HWND hwnd,UINT message,WPARAM param
         if(message==WM_NCLBUTTONDOWN&&parameter==HTCAPTION&&self->windowService_->VisibleMode()==miniwindow::WindowMode::Maximized){auto result=self->windowService_->RestoreForDrag({GET_X_LPARAM(data),GET_Y_LPARAM(data)});self->SyncWindowState();if(!result.ok){self->ShowError(result.message);return 0;}}
         if(message==WM_GETMINMAXINFO){auto info=reinterpret_cast<MINMAXINFO*>(data);const bool immersive=self->windowService_->Immersive();const UINT dpi=GetDpiForWindow(hwnd);info->ptMinTrackSize={MulDiv(immersive?64:160,dpi,96),MulDiv(immersive?64:120,dpi,96)};return 0;}
         self->windowService_->HandleMessage(message,parameter,data);
+        if(message==WM_MOVING||message==WM_SIZING)return TRUE;
         if(message==WM_DPICHANGED||message==WM_WINDOWPOSCHANGED)self->LayoutBrowser();
     }
     const auto result=DefSubclassProc(hwnd,message,parameter,data);
@@ -250,7 +316,6 @@ void MainWindow::ForwardBrowserPointer(UINT kind,Microsoft::UI::Xaml::Input::Poi
             if(lastBrowserButton_==button&&now-lastBrowserClick_<=GetDoubleClickTime()&&std::abs(pixels.x-lastBrowserPoint_.x)<=GetSystemMetrics(SM_CXDOUBLECLK)/2&&std::abs(pixels.y-lastBrowserPoint_.y)<=GetSystemMetrics(SM_CYDOUBLECLK)/2){kind+=2;lastBrowserButton_=0;}else{lastBrowserButton_=button;lastBrowserClick_=now;}
         }
     }else if(kind==WM_MOUSEWHEEL){
-        if(!properties.IsHorizontalMouseWheel()&&input_->TryHandleWheel(properties.MouseWheelDelta(),miniwindow::CurrentKeyModifiers())){args.Handled(true);return;}
         kind=properties.IsHorizontalMouseWheel()?WM_MOUSEHWHEEL:WM_MOUSEWHEEL;data=static_cast<UINT>(properties.MouseWheelDelta());
     }else if(kind==WM_MOUSELEAVE&&browserButtons_)return;
     if(browser_->SendMouseInput(kind,keys,data,pixels)){
@@ -265,6 +330,21 @@ void MainWindow::HandleHotkey(miniwindow::HotkeyAction action,miniwindow::Hotkey
     using miniwindow::HotkeyAction;using miniwindow::HotkeyGesture;using miniwindow::MediaCommand;
     if(action==HotkeyAction::Immersion){ImmersionClick(nullptr,nullptr);return;}
     if(action==HotkeyAction::ToggleHidden){auto result=windowService_->SetHidden(!state_.windowHidden);SyncWindowState();if(!result.ok)ShowError(result.message);return;}
+    if(action==HotkeyAction::OpacityUp||action==HotkeyAction::OpacityDown){
+        if(!state_.immersionActive||state_.windowHidden)return;
+        const auto& settings=state_.settings;
+        const int basis=settings.immersionStyle==miniwindow::ImmersionStyle::Hole?settings.holeOpacityPercent:settings.autoHideOpacityPercent;
+        coordinator_->UpdateImmersion(settings.immersionStyle,std::clamp(basis+(action==HotkeyAction::OpacityUp?5:-5),0,100),settings.hoverReductionPercent,settings.holeRadius,true);
+        return;
+    }
+    if(action==HotkeyAction::SizeDown||action==HotkeyAction::SizeUp){
+        RECT current{};MONITORINFO monitor{sizeof(monitor)};
+        if(state_.windowHidden||IsIconic(hwnd_)||!GetWindowRect(hwnd_,&current)||!GetMonitorInfoW(MonitorFromWindow(hwnd_,MONITOR_DEFAULTTONEAREST),&monitor))return;
+        const auto dpi=GetDpiForWindow(hwnd_);const auto frame=xiaochuang::ReadWindowFrameInsets(hwnd_);
+        const SIZE minimum{std::max(1L,MulDiv(state_.immersionActive?64:160,dpi,96)-frame.left-frame.right),std::max(1L,MulDiv(state_.immersionActive?64:120,dpi,96)-frame.top-frame.bottom)};
+        const auto target=miniwindow::ResizeWindowBySteps(frame.Visible(current),action==HotkeyAction::SizeUp?1:-1,monitor.rcMonitor,minimum,state_.settings.snapThreshold);
+        auto result=windowService_->ResizeNormal(frame.Outer(target));SyncWindowState();if(!result.ok)ShowError(result.message);return;
+    }
     if(!browser_)return;
     MediaCommand command=MediaCommand::TogglePlay;
     if(gesture==HotkeyGesture::HoldStop)command=MediaCommand::StopHold;
@@ -335,8 +415,6 @@ void MainWindow::UpdateChromeLayout(){
     ActionButtons().HorizontalAlignment(tiny?HorizontalAlignment::Left:HorizontalAlignment::Right);
     const bool tabs=width>=260;
     Tabs().Visibility(tabs?Visibility::Visible:Visibility::Collapsed);TabMenuButton().Visibility(tabs?Visibility::Collapsed:Visibility::Visible);
-    StatusText().Visibility(width>=600&&!(windowService_&&windowService_->Immersive())&&!(windowService_&&windowService_->Hidden())&&Root().ActualHeight()>=240?Visibility::Visible:Visibility::Collapsed);
-    StatusText().Text(state_.settings.windowWheelEnabled?L"普通浏览  ·  "+miniwindow::WheelModifierLabel(state_.settings.windowWheelModifiers)+L"+滚轮调整窗口大小":L"普通浏览");
 }
 void MainWindow::FillBookmarkMenu(Windows::Foundation::Collections::IVector<Microsoft::UI::Xaml::Controls::MenuFlyoutItemBase> const& items){
     const auto& bookmarks=coordinator_->Snapshot().state.bookmarks;

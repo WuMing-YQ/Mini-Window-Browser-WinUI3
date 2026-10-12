@@ -89,7 +89,7 @@ void TestConfigMigration() {
     Check(zoomRange.settings.fixedWebZoomPercent == 500, L"网页缩放上限校验");
 
     const std::array<UINT, xiaochuang::kHotkeyCount> auditKeys = {
-        L'1', VK_OEM_3, L'3', L'4', VK_XBUTTON1, VK_XBUTTON2, L'9'};
+        L'1', VK_OEM_3, L'3', L'4', VK_XBUTTON1, VK_XBUTTON2, L'9', VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT};
     for (size_t index = 0; index < xiaochuang::kHotkeyCount; ++index) {
         reloaded.hotkeys[index].virtualKey = auditKeys[index];
         reloaded.hotkeys[index].modifiers = index % 2 == 0 ? MOD_CONTROL : 0;
@@ -254,8 +254,8 @@ void TestWindowGeometryHelpers() {
     Check(wide.cx == 1000 && wide.cy == 631, L"16:9 视频自动计算小窗高度");
     const SIZE constrained = CalculateAspectFitWindowSize(1900, 68, 1.0, 1920, 1040);
     Check(constrained.cx == 972 && constrained.cy == 1040, L"视频比例适配不超出工作区");
-    Check(!ShouldApplyVideoFullscreenFit(WindowMode::Maximized, true, true, 16.0 / 9.0),
-          L"小窗全屏期间记录比例但暂不调整窗口");
+    Check(ShouldApplyVideoFullscreenFit(WindowMode::Maximized, true, true, 16.0 / 9.0),
+          L"最大化窗口也允许视频比例适配");
     Check(ShouldApplyVideoFullscreenFit(WindowMode::Normal, true, true, 16.0 / 9.0),
           L"退出小窗全屏后仍在网页全屏时立即应用比例");
     const RECT monitor{0, 0, 1920, 1080};

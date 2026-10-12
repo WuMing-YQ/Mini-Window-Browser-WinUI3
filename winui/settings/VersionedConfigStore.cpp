@@ -15,7 +15,7 @@ using xiaochuang::RenderMode;
 using xiaochuang::kHotkeyCount;
 namespace {
 constexpr wchar_t kSettings[]=L"Settings",kSession[]=L"Session",kHotkeys[]=L"Hotkeys",kBookmarks[]=L"Bookmarks",kPresets[]=L"Presets";
-const std::array<const wchar_t*,xiaochuang::kHotkeyCount> kHotkeyKeys={L"Immersion",L"PlayPause",L"Back",L"Forward",L"PrevEp",L"NextEp",L"HideWin"};
+const std::array<const wchar_t*,xiaochuang::kHotkeyCount> kHotkeyKeys={L"Immersion",L"PlayPause",L"Back",L"Forward",L"PrevEp",L"NextEp",L"HideWin", L"OpacityUp", L"OpacityDown", L"SizeDown", L"SizeUp"};
 struct IniWriter {
     std::map<std::wstring,std::vector<std::pair<std::wstring,std::wstring>>> sections;
     void Put(const wchar_t* section,const std::wstring& key,std::wstring value) {sections[section].emplace_back(key,std::move(value));}
@@ -74,7 +74,7 @@ std::wstring Serialize(const AppState& state) {
 
     WriteInt(transactionPath, kPresets, L"Count", static_cast<int>(state.presets.size()));
     const std::array<const wchar_t*, kHotkeyCount> suffixes = {
-        L"HkImm", L"HkPlay", L"HkBack", L"HkFwd", L"HkPrev", L"HkNext", L"HkHide"
+        L"HkImm", L"HkPlay", L"HkBack", L"HkFwd", L"HkPrev", L"HkNext", L"HkHide", L"HkOpacityUp", L"HkOpacityDown", L"HkSizeDown", L"HkSizeUp"
     };
     for (size_t index = 0; index < state.presets.size(); ++index) {
         const Preset& preset = state.presets[index];
@@ -119,13 +119,9 @@ std::wstring Serialize(const AppState& state) {
     }
     WriteInt(transactionPath,L"Meta",L"SchemaVersion",1);
     WriteInt(transactionPath,kSettings,L"HoverReductionPercent",state.settings.hoverReductionPercent);
-    WriteInt(transactionPath,kSettings,L"WindowWheelEnabled",state.settings.windowWheelEnabled);
-    WriteInt(transactionPath,kSettings,L"WindowWheelModifiers",state.settings.windowWheelModifiers);
     for(size_t i=0;i<state.presets.size();++i) {
         const auto prefix=L"P"+std::to_wstring(i)+L"_";
         WriteInt(transactionPath,kPresets,prefix+L"HoverReductionPercent",state.presets[i].hoverReductionPercent);
-        WriteInt(transactionPath,kPresets,prefix+L"WindowWheelEnabled",state.presets[i].windowWheelEnabled);
-        WriteInt(transactionPath,kPresets,prefix+L"WindowWheelModifiers",state.presets[i].windowWheelModifiers);
     }
     return transactionPath.Text();
 }
@@ -186,7 +182,7 @@ const std::map<std::wstring,Range> settingsRanges={
     {L"systemtray",{0,1}},{L"backgroundmediahotkeys",{0,1}},{L"autofitvideofullscreen",{0,1}},
     {L"lockvideofullscreenaspect",{0,1}},{L"maximizedtopdragenabled",{0,1}},
     {L"immersionstyle",{0,1}},{L"hoverreductionpercent",{0,100}},
-    {L"windowwheelenabled",{0,1}},{L"windowwheelmodifiers",{1,15}}
+
 };
 const std::map<std::wstring,Range> presetRanges={
     {L"rad",{0,4000}},{L"snap",{0,200}},{L"holeopacity",{0,100}},{L"autohideopacity",{0,100}},
@@ -196,7 +192,7 @@ const std::map<std::wstring,Range> presetRanges={
     {L"immstyle",{0,1}},{L"fullscreen",{0,1}},{L"tabcount",{0,100}},{L"activetab",{0,99}},
     {L"x",{INT_MIN/2,INT_MAX/2}},{L"y",{INT_MIN/2,INT_MAX/2}},
     {L"w",{160,100000}},{L"h",{120,100000}},
-    {L"hoverreductionpercent",{0,100}},{L"windowwheelenabled",{0,1}},{L"windowwheelmodifiers",{1,15}}
+    {L"hoverreductionpercent",{0,100}}
 };
 bool ValidHotkey(const std::wstring& text) {
     std::wistringstream input(text);std::wstring field;std::vector<long long> fields;
@@ -225,7 +221,7 @@ OperationResult Validate(const Ini& ini,bool versioned) {
         if(section==L"presets") {
             if(key==L"count")range=Range{0,200};
             auto separator=key.find(L'_');if(separator!=std::wstring::npos){auto suffix=key.substr(separator+1);auto found=presetRanges.find(suffix);if(found!=presetRanges.end())range=found->second;
-                hotkey=suffix==L"hkimm"||suffix==L"hkplay"||suffix==L"hkback"||suffix==L"hkfwd"||suffix==L"hkprev"||suffix==L"hknext"||suffix==L"hkhide";
+                hotkey=suffix==L"hkimm"||suffix==L"hkplay"||suffix==L"hkback"||suffix==L"hkfwd"||suffix==L"hkprev"||suffix==L"hknext"||suffix==L"hkhide"||suffix==L"hkopacityup"||suffix==L"hkopacitydown"||suffix==L"hksizedown"||suffix==L"hksizeup";
             }
         }
         long long number;
@@ -274,13 +270,9 @@ OperationResult VersionedConfigStore::LoadOrMigrate(AppState& state) {
         result=Validate(ini,current);if(!result.ok)return result;
         AppState loaded;xiaochuang::ConfigStore(source).Load(loaded);
         loaded.settings.hoverReductionPercent=current?Field(ini,L"Settings",L"HoverReductionPercent",100):100;
-        loaded.settings.windowWheelEnabled=Field(ini,L"Settings",L"WindowWheelEnabled",1)!=0;
-        loaded.settings.windowWheelModifiers=Field(ini,L"Settings",L"WindowWheelModifiers",MOD_CONTROL|MOD_ALT);
         if(!current)loaded.settings.holeOpacityPercent=100;
         for(size_t i=0;i<loaded.presets.size();++i){auto& preset=loaded.presets[i];const auto prefix=L"P"+std::to_wstring(i)+L"_";
             preset.hoverReductionPercent=current?Field(ini,L"Presets",prefix+L"HoverReductionPercent",100):100;
-            preset.windowWheelEnabled=Field(ini,L"Presets",prefix+L"WindowWheelEnabled",1)!=0;
-            preset.windowWheelModifiers=Field(ini,L"Presets",prefix+L"WindowWheelModifiers",MOD_CONTROL|MOD_ALT);
             if(!current)preset.holeOpacityPercent=100;
         }
         result=ValidState(loaded);if(!result.ok)return result;

@@ -66,14 +66,16 @@ void AppCoordinator::OnBrowserState(bool ready,bool loading,std::wstring error) 
 }
 void AppCoordinator::OnWindowState(WindowMode mode,bool hidden,bool immersive){state_.windowMode=mode;state_.windowHidden=hidden;state_.immersionActive=immersive;state_.session.normalRect=window_.NormalRect();state_.session.maximized=mode==WindowMode::Maximized;Publish();}
 void AppCoordinator::OnHotkeyErrors(std::vector<std::wstring> errors){snapshot_.hotkeyErrors=std::move(errors);Publish();}
-void AppCoordinator::OnDocument(std::wstring url,std::wstring title){
+void AppCoordinator::OnDocument(std::wstring url,std::wstring title,uint64_t id){
+    auto found=std::find_if(state_.tabs.begin(),state_.tabs.end(),[&](const auto& tab){return tab.runtimeId==id;});
+    if(id&&found==state_.tabs.end())return;
     for(auto& character:title)if(character==L'\r'||character==L'\n'||character==L'\0')character=L' ';
     if(title.size()>4092){title.resize(4091);if(!title.empty()&&title.back()>=0xD800&&title.back()<=0xDBFF)title.pop_back();title+=L"…";}
-auto& tab=state_.tabs[static_cast<size_t>(state_.currentTabIndex)];tab.url=std::move(url);tab.title=std::move(title);Publish();}
-void AppCoordinator::NavigateActive(){auto result=browser_.Navigate(state_.tabs[static_cast<size_t>(state_.currentTabIndex)].url);Publish(std::move(result));}
+auto& tab=id?*found:state_.tabs[static_cast<size_t>(state_.currentTabIndex)];tab.url=std::move(url);tab.title=std::move(title);Publish();}
+void AppCoordinator::NavigateActive(){auto result=browser_.SyncTabs(state_.tabs,static_cast<size_t>(state_.currentTabIndex));Publish(std::move(result));}
 void AppCoordinator::AddTab(std::wstring url){SessionController(state_).AddTab(std::move(url));NavigateActive();}
-void AppCoordinator::SelectTab(size_t index){if(index>=state_.tabs.size())return;SessionController(state_).SelectTab(index);NavigateActive();}
-void AppCoordinator::CloseTab(size_t index){if(index>=state_.tabs.size())return;const bool active=static_cast<int>(index)==state_.currentTabIndex;SessionController(state_).CloseTab(index);if(active)NavigateActive();else Publish();}
+void AppCoordinator::SelectTab(size_t index){if(index>=state_.tabs.size()||static_cast<int>(index)==state_.currentTabIndex)return;SessionController(state_).SelectTab(index);NavigateActive();}
+void AppCoordinator::CloseTab(size_t index){if(index>=state_.tabs.size())return;SessionController(state_).CloseTab(index);NavigateActive();}
 void AppCoordinator::CloseOtherTabs(size_t index){if(index>=state_.tabs.size())return;SessionController(state_).CloseOthers(index);NavigateActive();}
 void AppCoordinator::CloseAllTabs(){SessionController(state_).CloseAll();NavigateActive();}
 void AppCoordinator::OpenBookmark(size_t index){if(index>=state_.bookmarks.size())return;Navigate(state_.bookmarks[index].url);}
@@ -90,8 +92,6 @@ OperationResult AppCoordinator::SaveCurrentPreset(std::wstring name){
     auto valid=ValidatePresetName(name);if(!valid.ok)return Finish(valid);
     Preset preset;preset.name=std::move(name);preset.normalRect=window_.NormalRect();preset.maximized=state_.windowMode==WindowMode::Maximized;
     preset.hoverReductionPercent=state_.settings.hoverReductionPercent;
-    preset.windowWheelEnabled=state_.settings.windowWheelEnabled;
-    preset.windowWheelModifiers=state_.settings.windowWheelModifiers;
     preset.holeRadius=state_.settings.holeRadius;
     preset.snapThreshold=state_.settings.snapThreshold;
     preset.holeOpacityPercent=state_.settings.holeOpacityPercent;
@@ -115,8 +115,6 @@ OperationResult AppCoordinator::ApplyPreset(size_t index){
     if(index>=state_.presets.size())return Finish({false,L"预设已不存在。"});
     const auto previous=state_;const auto preset=state_.presets[index];
     state_.settings.hoverReductionPercent=preset.hoverReductionPercent;
-    state_.settings.windowWheelEnabled=preset.windowWheelEnabled;
-    state_.settings.windowWheelModifiers=preset.windowWheelModifiers;
     state_.settings.holeRadius=preset.holeRadius;
     state_.settings.snapThreshold=preset.snapThreshold;
     state_.settings.holeOpacityPercent=preset.holeOpacityPercent;
@@ -132,13 +130,13 @@ OperationResult AppCoordinator::ApplyPreset(size_t index){
     state_.settings.maximizedTopDragEnabled=preset.maximizedTopDragEnabled;
     state_.settings.immersionStyle=preset.immersionStyle;
     state_.settings.homeUrl=preset.homeUrl;
-    state_.settings.Clamp();state_.hotkeys=preset.hotkeys;state_.tabs=preset.tabs;if(state_.tabs.empty())state_.tabs.push_back({L"预设页面",preset.currentUrl.empty()?state_.settings.homeUrl:preset.currentUrl});for(auto& tab:state_.tabs)if(tab.url.empty())tab.url=state_.settings.homeUrl;
+    state_.settings.Clamp();state_.hotkeys=preset.hotkeys;state_.tabs=preset.tabs;for(auto& tab:state_.tabs)tab.runtimeId=xiaochuang::NextTabId();if(state_.tabs.empty())state_.tabs.push_back({L"预设页面",preset.currentUrl.empty()?state_.settings.homeUrl:preset.currentUrl});for(auto& tab:state_.tabs)if(tab.url.empty())tab.url=state_.settings.homeUrl;
     state_.currentTabIndex=std::clamp(preset.activeTab,0,static_cast<int>(state_.tabs.size())-1);state_.session.activeTab=state_.currentTabIndex;
     auto result=window_.ApplyGeometry(preset.normalRect,preset.maximized);
     if(result.ok&&runtime_)result=runtime_();
-    if(result.ok)result=browser_.Navigate(state_.tabs[static_cast<size_t>(state_.currentTabIndex)].url);
     if(result.ok){state_.windowMode=preset.maximized?WindowMode::Maximized:WindowMode::Normal;state_.immersionActive=false;state_.windowHidden=false;state_.session.normalRect=preset.normalRect;state_.session.maximized=preset.maximized;browser_.SetVisible(true);result=settings_.Save(state_);}
-    if(!result.ok){state_=previous;auto restore=window_.ApplyGeometry(previous.session.normalRect,previous.session.maximized);if(restore.ok&&previous.immersionActive)restore=window_.SetMode(previous.windowMode);if(restore.ok&&previous.windowHidden)restore=window_.SetHidden(true);if(runtime_)runtime_();browser_.Navigate(state_.tabs[static_cast<size_t>(state_.currentTabIndex)].url);browser_.SetVisible(!state_.windowHidden);if(!restore.ok)result.message+=L" 窗口恢复失败："+restore.message;}
+    if(result.ok)result=browser_.SyncTabs(state_.tabs,static_cast<size_t>(state_.currentTabIndex));
+    if(!result.ok){state_=previous;auto restore=window_.ApplyGeometry(previous.session.normalRect,previous.session.maximized);if(restore.ok&&previous.immersionActive)restore=window_.SetMode(previous.windowMode);if(restore.ok&&previous.windowHidden)restore=window_.SetHidden(true);if(runtime_)runtime_();browser_.SyncTabs(state_.tabs,static_cast<size_t>(state_.currentTabIndex));browser_.SetVisible(!state_.windowHidden);if(!restore.ok)result.message+=L" 窗口恢复失败："+restore.message;}
     return Finish(result);
 }
 OperationResult AppCoordinator::CommitRuntime(AppState next){

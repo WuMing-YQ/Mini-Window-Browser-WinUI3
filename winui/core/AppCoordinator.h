@@ -15,7 +15,7 @@ public:
     void ToggleHidden();
     void OnBrowserState(bool ready,bool loading,std::wstring error);
     void AddTab(std::wstring);void SelectTab(size_t);void CloseTab(size_t);void CloseOtherTabs(size_t);void CloseAllTabs();
-    void OnDocument(std::wstring,std::wstring);
+    void OnDocument(std::wstring,std::wstring,uint64_t id=0);
     void OnWindowState(WindowMode,bool,bool);
     void OnHotkeyErrors(std::vector<std::wstring>);
     void OnCaptureStatus(std::wstring text){snapshot_.captureStatus=std::move(text);Publish();}

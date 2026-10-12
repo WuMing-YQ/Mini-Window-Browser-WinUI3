@@ -72,7 +72,7 @@ void WriteHotkey(const std::filesystem::path& path, const wchar_t* section,
 }
 
 const std::array<const wchar_t*, kHotkeyCount> kHotkeyKeys = {
-    L"Immersion", L"PlayPause", L"Back", L"Forward", L"PrevEp", L"NextEp", L"HideWin"
+    L"Immersion", L"PlayPause", L"Back", L"Forward", L"PrevEp", L"NextEp", L"HideWin", L"OpacityUp", L"OpacityDown", L"SizeDown", L"SizeUp"
 };
 
 RECT MakeRect(int x, int y, int width, int height) {
@@ -204,7 +204,7 @@ bool ConfigStore::Load(AppState& state) const {
         for (size_t hotkeyIndex = 0; hotkeyIndex < kHotkeyCount; ++hotkeyIndex) {
             preset.hotkeys[hotkeyIndex] = state.hotkeys[hotkeyIndex];
             const std::wstring legacySuffixes[kHotkeyCount] = {
-                L"HkImm", L"HkPlay", L"HkBack", L"HkFwd", L"HkPrev", L"HkNext", L"HkHide"
+                L"HkImm", L"HkPlay", L"HkBack", L"HkFwd", L"HkPrev", L"HkNext", L"HkHide", L"HkOpacityUp", L"HkOpacityDown", L"HkSizeDown", L"HkSizeUp"
             };
             ReadHotkey(path_, kPresets, prefix + legacySuffixes[hotkeyIndex], preset.hotkeys[hotkeyIndex]);
         }
@@ -272,7 +272,7 @@ bool ConfigStore::Save(const AppState& state, const RECT& normalRect, bool maxim
     WritePrivateProfileSectionW(kPresets, nullptr, transactionPath.c_str());
     WriteInt(transactionPath, kPresets, L"Count", static_cast<int>(state.presets.size()));
     const std::array<const wchar_t*, kHotkeyCount> suffixes = {
-        L"HkImm", L"HkPlay", L"HkBack", L"HkFwd", L"HkPrev", L"HkNext", L"HkHide"
+        L"HkImm", L"HkPlay", L"HkBack", L"HkFwd", L"HkPrev", L"HkNext", L"HkHide", L"HkOpacityUp", L"HkOpacityDown", L"HkSizeDown", L"HkSizeUp"
     };
     for (size_t index = 0; index < state.presets.size(); ++index) {
         const Preset& preset = state.presets[index];

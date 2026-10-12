@@ -1,16 +1,12 @@
 #pragma once
 #include "../core/Ports.h"
 #include <optional>
-#include "WindowWheelPolicy.h"
 namespace miniwindow {
 constexpr UINT_PTR kInputTimer=4403;
 class InputService {
 public:
     InputService(HWND,AppState&,std::function<void(HotkeyAction,HotkeyGesture)>);
     ~InputService();
-    void SetWheelHandler(std::function<OperationResult(int)> handler){wheelHandler_=std::move(handler);}
-    bool TryHandleWheel(int delta,UINT modifiers);
-    void ResetWheel(){wheel_.Reset();wheelContextKnown_=false;}
     void Start();void Stop();void OnMessage(UINT,WPARAM,LPARAM);
     void CancelGesture();
     void BeginCapture(HotkeyAction);void CancelCapture();
@@ -27,21 +23,14 @@ public:
     const std::vector<std::wstring>& Errors() const {return errors_;}
     void SetImmersiveWebFullscreen(bool active){hotkeys_.SetImmersiveWebFullscreen(active);}
 private:
-    static LRESULT CALLBACK WheelMessageHook(int,WPARAM,LPARAM);
-    WheelContext CurrentWheelContext(UINT)const;
-    void RefreshWheelContext();
     void PublishErrors();
-    inline static thread_local InputService* wheelOwner_=nullptr;
-    HHOOK wheelHook_=nullptr;WindowWheelAccumulator wheel_;
-    HWND lastWheelFocus_=nullptr;UINT lastWheelModifiers_=0,lastWheelConfigured_=0;bool wheelContextKnown_=false;
-    std::function<OperationResult(int)> wheelHandler_;
     HWND hwnd_;AppState& state_;std::function<void(HotkeyAction,HotkeyGesture)> action_;
     xiaochuang::HotkeyManager hotkeys_;
     std::optional<HotkeyAction> hold_,capture_;
     std::function<void(HotkeyAction,HotkeyBinding)> captureHandler_;
     std::function<void()> status_;std::vector<std::wstring> errors_;
     bool running_=false,refreshing_=false;
-    bool runtimeKnown_=false,lastHidden_=false,lastBackground_=false,lastSuppressed_=false;
+    bool runtimeKnown_=false,lastImmersive_=false,lastHidden_=false,lastBackground_=false,lastSuppressed_=false;
     bool hooksReady_=true;
     std::array<HotkeyBinding,xiaochuang::kHotkeyCount> registered_{};
 };

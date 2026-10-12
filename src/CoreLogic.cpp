@@ -91,7 +91,7 @@ SIZE CalculateAspectFitWindowSize(int preferredWidth, int chromeHeight, double a
 
 bool ShouldApplyVideoFullscreenFit(WindowMode visibleMode, bool webFullscreen,
                                    bool autoFitEnabled, double aspectRatio) {
-    return visibleMode == WindowMode::Normal && webFullscreen && autoFitEnabled &&
+    return visibleMode != WindowMode::Hidden && webFullscreen && autoFitEnabled &&
         std::isfinite(aspectRatio) && aspectRatio > 0.1 && aspectRatio < 10.0;
 }
 

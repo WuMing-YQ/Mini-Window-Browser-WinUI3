@@ -61,6 +61,9 @@ public:
     void UpdateNormalRectFromWindow();
     void OnImmersionTimer();
     void ReassertTopmost() const;
+    void BeginMove();
+    void EndMove(){moving_=false;if(webFullscreen_&&settings_&&settings_->autoFitVideoFullscreen)FitWebFullscreenAspect(webFullscreenAspect_);}
+    void ResizeWindow(RECT rect);
     void SnapMovingRect(RECT* movingRect, bool controlHeld) const;
     void RefreshVisualState();
     void RefreshFrameAppearance() const;
@@ -90,7 +93,12 @@ private:
     RECT preImmersionRect_{};
     RECT immersionRect_{};
     std::function<RECT()> contentRectProvider_;
-    RECT preVideoFitRect_{};
+    RECT preVideoFitRect_{},preVideoNormalRect_{};
+    WindowMode preVideoMode_=WindowMode::Normal;
+    RECT immersionInsets_{};
+    bool moving_=false;
+    POINT moveCursor_{};
+    RECT moveRect_{};
     WindowMode visibleMode_ = WindowMode::Normal;
     WindowMode returnFromImmersion_ = WindowMode::Normal;
     int chromeHeight_ = 82;

@@ -73,7 +73,8 @@ void HotkeyManager::Stop() {
     suppressEscapeForFocusedWebView_.store(false);
 }
 
-void HotkeyManager::Refresh(bool hidden, bool backgroundMediaHotkeys, bool inputSuppressed) {
+void HotkeyManager::Refresh(bool hidden, bool backgroundMediaHotkeys, bool inputSuppressed, bool immersive) {
+    immersive_ = immersive;
     hidden_ = hidden;
     backgroundMediaHotkeys_ = backgroundMediaHotkeys;
     inputSuppressed_ = inputSuppressed;
@@ -387,6 +388,7 @@ bool HotkeyManager::NeedsRawMouseInput() const {
 
 bool HotkeyManager::IsActionActive(HotkeyAction action) const {
     if (inputSuppressed_) return false;
+    if ((action == HotkeyAction::OpacityUp || action == HotkeyAction::OpacityDown) && !immersive_) return false;
     if (!hidden_) return true;
     if (action == HotkeyAction::ToggleHidden) return true;
     return backgroundMediaHotkeys_ && IsMediaAction(action);

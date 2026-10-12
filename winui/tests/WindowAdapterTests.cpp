@@ -41,6 +41,15 @@ void WindowAdapterTests() {
         service.RefreshTheme(xiaochuang::ThemeMode::Dark);CHECK(service.Theme()==xiaochuang::ThemeMode::Dark);
         CHECK(service.SetMode(miniwindow::WindowMode::ImmersionHole).ok);CHECK(service.RestoreNormal().ok);
         CHECK(service.Theme()==xiaochuang::ThemeMode::Dark);
+        settings.autoFitVideoFullscreen=true;
+        for(auto mode:{miniwindow::WindowMode::Normal,miniwindow::WindowMode::Maximized,miniwindow::WindowMode::ImmersionHole,miniwindow::WindowMode::ImmersionAutoHide}){
+            CHECK(service.SetMode(mode).ok);RECT original{};GetWindowRect(hwnd,&original);
+            service.OnWebFullscreen(true,16.0/9.0);
+            service.OnWebFullscreen(true,4.0/3.0);
+            service.OnWebFullscreen(false);RECT restored{};GetWindowRect(hwnd,&restored);
+            CHECK(EqualRect(&original,&restored));CHECK(service.Mode()==mode);
+        }
+        CHECK(service.RestoreNormal().ok);
         // A failure during recovery must not skip the remaining recovery steps.
         CHECK(service.SetMode(miniwindow::WindowMode::ImmersionHole).ok);
         unsigned styles=0;auto realStyle=operations.style;

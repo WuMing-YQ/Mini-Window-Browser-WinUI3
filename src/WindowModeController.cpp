@@ -53,6 +53,8 @@ WindowMode WindowModeController::Mode() const noexcept {
 
 void WindowModeController::ToggleMaximized() {
     if (!window_ || IsImmersive()) return;
+    const bool refit=videoFitActive_;const double aspect=webFullscreenAspect_;
+    if(refit)LeaveWebFullscreen();
     if (visibleMode_ == WindowMode::Maximized) {
         visibleMode_ = WindowMode::Normal;
         ApplyVisibleMode(visibleMode_, true);
@@ -65,6 +67,7 @@ void WindowModeController::ToggleMaximized() {
         visibleMode_ = WindowMode::Maximized;
         ApplyVisibleMode(visibleMode_, true);
     }
+    if(refit){EnterWebFullscreen();FitWebFullscreenAspect(aspect);}
 }
 
 void WindowModeController::ToggleImmersion() {
@@ -79,7 +82,11 @@ void WindowModeController::SetImmersion(bool enabled) {
         if (enabled) RefreshVisualState();
         return;
     }
+    const bool refit=videoFitActive_;
+    const double aspect=webFullscreenAspect_;
+    if(refit)LeaveWebFullscreen();
     if (enabled) {
+        immersionInsets_=ContentInsets();
         returnFromImmersion_ = visibleMode_;
         // Capture the actual viewport before any titlebar/presenter/layout changes.
         // Keep the original outer rectangle separately for an exact round trip.
@@ -113,6 +120,7 @@ void WindowModeController::SetImmersion(bool enabled) {
         }
         ApplyVisibleMode(visibleMode_, true);
     }
+    if(refit){EnterWebFullscreen();FitWebFullscreenAspect(aspect);}
 }
 
 void WindowModeController::SetHidden(bool hidden) {
@@ -147,10 +155,13 @@ void WindowModeController::LeaveWebFullscreen() {
     if (!videoFitActive_) return;
 
     videoFitActive_ = false;
-    normalRect_ = EnsureVisible(preVideoFitRect_, false);
-    if (visibleMode_ == WindowMode::Normal && !hidden_) {
-        ApplyVisibleMode(visibleMode_, true);
-    }
+    visibleMode_=preVideoMode_;
+    if(IsImmersive())visibleMode_=settings_->immersionStyle==ImmersionStyle::Hole?WindowMode::ImmersionHole:WindowMode::ImmersionAutoHide;
+    normalRect_=preVideoNormalRect_;
+    if(IsImmersive())immersionRect_=preVideoFitRect_;
+    else if(visibleMode_==WindowMode::Normal)normalRect_=preVideoFitRect_;
+    ApplyVisibleMode(visibleMode_,true);
+    if(hidden_)ShowWindow(window_,SW_HIDE);
 }
 
 void WindowModeController::FitWebFullscreenAspect(double aspectRatio) {
@@ -164,13 +175,18 @@ void WindowModeController::FitWebFullscreenAspect(double aspectRatio) {
     if (!GetWindowRect(window_, &current)) return;
     if (!videoFitActive_) {
         preVideoFitRect_ = current;
+        preVideoNormalRect_=normalRect_;
+        preVideoMode_=visibleMode_;
         videoFitActive_ = true;
+        if(visibleMode_==WindowMode::Maximized){visibleMode_=WindowMode::Normal;ApplyVisibleMode(visibleMode_,false);}
+
     }
 
     // Automatic sizing emits WM_SIZE/WM_MOVE synchronously. Preserve the
     // pre-fullscreen rectangle instead of treating those messages as a user drag.
     struct ModeGuard { bool& flag; bool previous; ~ModeGuard(){flag=previous;} } guard{applyingMode_,applyingMode_};
     applyingMode_=true;
+    for(int pass=0;pass<3;++pass){
     const RECT insets=ContentInsets();
     const LONG extraWidth=insets.left+insets.right;
     const RECT monitor = CurrentMonitorRect(false);
@@ -185,6 +201,10 @@ void WindowModeController::FitWebFullscreenAspect(double aspectRatio) {
                  desired.right - desired.left, desired.bottom - desired.top,
                  SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
     if (layoutCallback_) layoutCallback_();
+    const RECT afterInsets=ContentInsets();
+    if(EqualRect(&insets,&afterInsets))break;
+    if(!GetWindowRect(window_,&current))break;
+    }
 }
 
 RECT WindowModeController::ContentInsets() const {
@@ -242,16 +262,11 @@ void WindowModeController::ApplyPresetGeometry(const RECT& normalRect, bool maxi
 }
 
 void WindowModeController::UpdateNormalRectFromWindow() {
-    if (!window_ || applyingMode_ || visibleMode_ != WindowMode::Normal || hidden_ || IsIconic(window_)) return;
+    if (!window_ || applyingMode_ || videoFitActive_ || visibleMode_ != WindowMode::Normal || hidden_ || IsIconic(window_)) return;
     RECT current{};
     if (GetWindowRect(window_, &current)) {
         normalRect_ = current;
-        if (videoFitActive_) {
-            // Once the user moves or snaps the auto-fitted video window, that new
-            // position becomes authoritative and must survive leaving fullscreen.
-            preVideoFitRect_ = current;
-            videoFitActive_ = false;
-        }
+
     }
 }
 
@@ -333,9 +348,33 @@ void WindowModeController::ReassertTopmost() const {
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
 }
 
+void WindowModeController::BeginMove(){
+    moving_=GetCursorPos(&moveCursor_)&&GetWindowRect(window_,&moveRect_);
+}
+void WindowModeController::ResizeWindow(RECT rect){
+    if(!window_||hidden_)return;
+    if(visibleMode_==WindowMode::Maximized){visibleMode_=WindowMode::Normal;ApplyVisibleMode(visibleMode_,false);}
+    if(IsImmersive()&&!videoFitActive_){
+        immersionRect_=rect;
+        // Reconstruct normal chrome around the resized viewport for immersion exit.
+        preImmersionRect_={rect.left-immersionInsets_.left,rect.top-immersionInsets_.top,rect.right+immersionInsets_.right,rect.bottom+immersionInsets_.bottom};
+        preImmersionRect_=EnsureVisible(preImmersionRect_);
+        normalRect_=preImmersionRect_;returnFromImmersion_=WindowMode::Normal;
+    }else if(!videoFitActive_)normalRect_=rect;
+    RestoreGeometry(rect);
+    if(webFullscreen_&&settings_->autoFitVideoFullscreen)FitWebFullscreenAspect(webFullscreenAspect_);
+    if(layoutCallback_)layoutCallback_();
+    if(IsImmersive()){lastCursor_={LONG_MIN,LONG_MIN};OnImmersionTimer();}
+}
 void WindowModeController::SnapMovingRect(RECT* movingRect, bool controlHeld) const {
     if (!window_ || !settings_ || !movingRect || controlHeld || settings_->snapThreshold <= 0 ||
         visibleMode_ != WindowMode::Normal) return;
+    // Reconstruct from the drag origin, never from the last snapped position.
+    // Keyboard system-menu moves keep their supplied rectangle.
+    POINT cursor{};
+    if(moving_&&(GetAsyncKeyState(VK_LBUTTON)&0x8000)&&GetCursorPos(&cursor)){
+        *movingRect=moveRect_;OffsetRect(movingRect,cursor.x-moveCursor_.x,cursor.y-moveCursor_.y);
+    }
     const auto frame = ReadWindowFrameInsets(window_);
     const RECT visible = frame.Visible(*movingRect);
     HMONITOR monitor = MonitorFromRect(&visible, MONITOR_DEFAULTTONEAREST);
@@ -355,6 +394,10 @@ void WindowModeController::SnapMovingRect(RECT* movingRect, bool controlHeld) co
 
 void WindowModeController::RefreshVisualState() {
     if (!window_) return;
+    if(webFullscreen_){
+        if(!settings_->autoFitVideoFullscreen&&videoFitActive_){const auto aspect=webFullscreenAspect_;LeaveWebFullscreen();EnterWebFullscreen();webFullscreenAspect_=aspect;}
+        else if(settings_->autoFitVideoFullscreen&&!videoFitActive_)FitWebFullscreenAspect(webFullscreenAspect_);
+    }
     if (!IsImmersive()) return;
     const WindowMode desired = settings_ && settings_->immersionStyle == ImmersionStyle::AutoHide
         ? WindowMode::ImmersionAutoHide : WindowMode::ImmersionHole;

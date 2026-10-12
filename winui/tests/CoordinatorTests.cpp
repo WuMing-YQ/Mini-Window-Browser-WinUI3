@@ -2,8 +2,9 @@
 #include "../core/AppCoordinator.h"
 namespace {
 struct Browser : miniwindow::IBrowserPort {
-    bool fail=false;
-    miniwindow::OperationResult Navigate(const std::wstring&) override {return {!fail,fail?L"Navigation failed":L""};}
+    bool fail=false;int navigations=0,synchronizations=0;
+    miniwindow::OperationResult SyncTabs(const std::vector<xiaochuang::TabData>&,size_t)override{++synchronizations;return {};}
+    miniwindow::OperationResult Navigate(const std::wstring&) override {++navigations;return {!fail,fail?L"Navigation failed":L""};}
     void SetVisible(bool) override {}
     void ExecuteMedia(miniwindow::MediaCommand,int) override {}
     void Close() override {}
@@ -51,6 +52,17 @@ void CoordinatorTests() {
     app.OnBrowserState(true,true,L"");
     CHECK(app.Snapshot().browserReady && app.Snapshot().loading);
     CHECK(updates>=9);
+    const auto first=app.Snapshot().state.tabs[0].runtimeId;
+    const auto count=browser.navigations;
+    app.AddTab(L"example.org");const auto second=app.Snapshot().state.tabs[1].runtimeId;
+    CHECK(first!=second);app.SelectTab(0);app.SelectTab(1);
+    CHECK(browser.navigations==count);CHECK(browser.synchronizations>=3);
+    app.OnDocument(L"https://background.example",L"background",first);
+    CHECK(app.Snapshot().state.tabs[0].title==L"background");
+    CHECK(app.Snapshot().state.tabs[1].runtimeId==second);
+    app.CloseTab(0);app.OnDocument(L"https://stale.example",L"stale",first);
+    CHECK(app.Snapshot().state.tabs.size()==1);CHECK(app.Snapshot().state.tabs[0].runtimeId==second);
+    CHECK(app.Snapshot().state.tabs[0].title!=L"stale");
     app.Subscribe({});
     const int before=updates;
     app.OnBrowserState(false,false,L"closed");

@@ -8,6 +8,8 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -45,6 +47,10 @@ enum class HotkeyAction : size_t {
     Previous,
     Next,
     ToggleHidden,
+    OpacityUp,
+    OpacityDown,
+    SizeDown,
+    SizeUp,
     Count,
 };
 
@@ -67,13 +73,15 @@ inline std::array<HotkeyBinding, kHotkeyCount> DefaultHotkeys() {
         {105, 0, L'7', L"上一集"},
         {106, 0, L'8', L"下一集"},
         {107, 0, L'9', L"隐藏/显示"},
+        {108, MOD_CONTROL | MOD_ALT, VK_UP, L"增加常驻不透明度"},
+        {109, MOD_CONTROL | MOD_ALT, VK_DOWN, L"降低常驻不透明度"},
+        {110, MOD_CONTROL | MOD_ALT, VK_LEFT, L"缩小窗口"},
+        {111, MOD_CONTROL | MOD_ALT, VK_RIGHT, L"放大窗口"},
     }};
 }
 
 struct AppSettings {
     int hoverReductionPercent = 100;
-    bool windowWheelEnabled = true;
-    UINT windowWheelModifiers = MOD_CONTROL | MOD_ALT;
     int holeRadius = 400;
     int snapThreshold = 20;
     int holeOpacityPercent = 100;
@@ -94,8 +102,6 @@ struct AppSettings {
 
     void Clamp() {
         hoverReductionPercent = std::clamp(hoverReductionPercent, 0, 100);
-        constexpr UINT allowedWheelModifiers = MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_WIN;
-        if (windowWheelModifiers == 0 || (windowWheelModifiers & ~allowedWheelModifiers) != 0) windowWheelModifiers = MOD_CONTROL | MOD_ALT;
         holeRadius = std::clamp(holeRadius, 10, 2000);
         snapThreshold = std::clamp(snapThreshold, 0, 200);
         holeOpacityPercent = std::clamp(holeOpacityPercent, 0, 100);
@@ -108,9 +114,11 @@ struct AppSettings {
     }
 };
 
+inline uint64_t NextTabId(){static std::atomic<uint64_t> next{1};return next.fetch_add(1);}
 struct TabData {
     std::wstring title = L"正在加载…";
     std::wstring url = L"https://www.bilibili.com";
+    uint64_t runtimeId=NextTabId(); // Session-only identity, never persisted.
 };
 
 struct Bookmark {
@@ -123,8 +131,6 @@ struct Preset {
     RECT normalRect{100, 100, 1100, 700};
     bool maximized = false;
     int hoverReductionPercent = 100;
-    bool windowWheelEnabled = true;
-    UINT windowWheelModifiers = MOD_CONTROL | MOD_ALT;
     int holeRadius = 400;
     int snapThreshold = 20;
     int holeOpacityPercent = 100;

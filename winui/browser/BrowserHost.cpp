@@ -1,6 +1,7 @@
 #include <unknwn.h>
 #include "BrowserHost.h"
 #include "WebLifecycle.h"
+#include "VideoFullscreenScript.h"
 #include "../../src/WebViewZoom.h"
 #include "../../src/ConfigStore.h"
 #include <winrt/Microsoft.UI.Dispatching.h>
@@ -28,7 +29,6 @@ struct BrowserHost::State {
     HWND parent=nullptr;
     HWND surface=nullptr;
     UINT nativeButtons=0;POINT nativePoint{};
-    std::function<bool(int,UINT)> wheel;
     std::filesystem::path profile;
     winrt::Microsoft::UI::Dispatching::DispatcherQueue queue{nullptr};
     WebLifecycle life;
@@ -44,7 +44,6 @@ struct BrowserHost::State {
     RECT bounds{};
     bool ready=false,loading=false,visible=true,occluded=false,waiting=false,events=false;
     UINT64 navigationId=0;
-    uint64_t fullscreenRequest=0;
     uint64_t generation=0;
     std::wstring pendingUrl;
     std::shared_ptr<Creation> creation;
@@ -54,7 +53,7 @@ struct BrowserHost::State {
     std::function<void(std::wstring,std::wstring)> document;
     std::function<void()> cancelGesture,closeTab;
     std::function<void(std::wstring)> newTab;
-    EventRegistrationToken starting{},content{},completed{},source{},title{},message{},fullscreen{},newWindow{},closeWindow{},failed{},gotFocus{},lostFocus{};
+    EventRegistrationToken starting{},content{},completed{},source{},title{},message{},newWindow{},closeWindow{},failed{},gotFocus{},lostFocus{};
     void Report(std::wstring error={}) {if(status) status(ready,loading,std::move(error));}
     void UpdateDocument() {
         if(waiting||!view||!document) return;
@@ -79,7 +78,7 @@ winrt::Windows::Foundation::IAsyncAction BrowserHost::InitializeAsync() {
         windowClass.style=CS_DBLCLKS;windowClass.hCursor=LoadCursorW(nullptr,IDC_ARROW);
         windowClass.hInstance=GetModuleHandleW(nullptr);windowClass.lpszClassName=L"MiniWindow.BrowserCompositionSurface";
         if(!RegisterClassW(&windowClass)&&GetLastError()!=ERROR_CLASS_ALREADY_EXISTS){state->Report(BrowserError(HRESULT_FROM_WIN32(GetLastError())));co_return;}
-        state->surface=CreateWindowExW(0,windowClass.lpszClassName,L"",WS_CHILD|WS_VISIBLE|WS_CLIPCHILDREN|WS_CLIPSIBLINGS,
+        state->surface=CreateWindowExW(0,windowClass.lpszClassName,L"",WS_CHILD|(state->occluded?0:WS_VISIBLE)|WS_CLIPCHILDREN|WS_CLIPSIBLINGS,
             state->bounds.left,state->bounds.top,state->bounds.right-state->bounds.left,state->bounds.bottom-state->bounds.top,state->parent,nullptr,windowClass.hInstance,state.get());
         if(!state->surface){state->Report(BrowserError(HRESULT_FROM_WIN32(GetLastError())));co_return;}
         SetWindowPos(state->surface,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
@@ -125,7 +124,7 @@ winrt::Windows::Foundation::IAsyncAction BrowserHost::InitializeAsync() {
                     wil::com_ptr<ICoreWebView2Settings> settings;
                     if(SUCCEEDED(s->view->get_Settings(&settings))) settings->put_IsStatusBarEnabled(FALSE);
                     try {ConfigureEvents(s,generation);} catch(const winrt::hresult_error& error) {creation->Finish(error.code());return S_OK;}
-                    const auto scriptResult=s->view->AddScriptToExecuteOnDocumentCreated(xiaochuang::MediaBridge::BootstrapScript(),
+                    const auto scriptResult=s->view->AddScriptToExecuteOnDocumentCreated((std::wstring(xiaochuang::MediaBridge::BootstrapScript())+VideoFullscreenScript).c_str(),
                         Callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>([creation](HRESULT result,PCWSTR)->HRESULT {creation->Finish(result);return S_OK;}).Get());
                     if(FAILED(scriptResult)) creation->Finish(scriptResult);
                     return S_OK;
@@ -153,7 +152,7 @@ void BrowserHost::ConfigureEvents(const std::shared_ptr<State>& s,uint64_t gener
     winrt::check_hresult(s->controller->add_GotFocus(Callback<ICoreWebView2FocusChangedEventHandler>([current](ICoreWebView2Controller*,IUnknown*)->HRESULT{if(auto s=current();s&&s->focus)s->focus(true);return S_OK;}).Get(),&s->gotFocus));
     winrt::check_hresult(s->controller->add_LostFocus(Callback<ICoreWebView2FocusChangedEventHandler>([current](ICoreWebView2Controller*,IUnknown*)->HRESULT{if(auto s=current();s&&s->focus)s->focus(false);return S_OK;}).Get(),&s->lostFocus));
     winrt::check_hresult(s->view->add_NavigationStarting(Callback<ICoreWebView2NavigationStartingEventHandler>([current](ICoreWebView2*,ICoreWebView2NavigationStartingEventArgs* args)->HRESULT {
-        if(auto s=current()) {CancelNativeMouse(*s);++s->fullscreenRequest;if(s->signal)s->signal({PageSignal::Fullscreen,false});s->loading=true;s->waiting=true;if(args)args->get_NavigationId(&s->navigationId);if(s->cancelGesture)s->cancelGesture();s->Report();}return S_OK;
+        if(auto s=current()) {CancelNativeMouse(*s);if(s->signal)s->signal({PageSignal::Fullscreen,false});s->loading=true;s->waiting=true;if(args)args->get_NavigationId(&s->navigationId);if(s->cancelGesture)s->cancelGesture();s->Report();}return S_OK;
     }).Get(),&s->starting));
     winrt::check_hresult(s->view->add_ContentLoading(Callback<ICoreWebView2ContentLoadingEventHandler>([current](ICoreWebView2*,ICoreWebView2ContentLoadingEventArgs* args)->HRESULT {
         if(auto s=current()) {UINT64 id=0;if(args)args->get_NavigationId(&id);if(id==s->navigationId){s->waiting=false;s->controller->put_IsVisible(s->visible&&!s->occluded);}}return S_OK;
@@ -170,15 +169,6 @@ void BrowserHost::ConfigureEvents(const std::shared_ptr<State>& s,uint64_t gener
     winrt::check_hresult(s->view->add_WebMessageReceived(Callback<ICoreWebView2WebMessageReceivedEventHandler>([current](ICoreWebView2*,ICoreWebView2WebMessageReceivedEventArgs* args)->HRESULT {
         if(auto s=current()) {wil::unique_cotaskmem_string text;if(args&&SUCCEEDED(args->TryGetWebMessageAsString(&text))&&text&&s->signal){if(auto value=ParsePageSignal(text.get()))s->signal(*value);}}return S_OK;
     }).Get(),&s->message));
-    winrt::check_hresult(s->view->add_ContainsFullScreenElementChanged(Callback<ICoreWebView2ContainsFullScreenElementChangedEventHandler>([current,generation,weak](ICoreWebView2*,IUnknown*)->HRESULT {
-        if(auto s=current()) {
-            const auto request=++s->fullscreenRequest;BOOL full=FALSE;s->view->get_ContainsFullScreenElement(&full);if(s->signal)s->signal({PageSignal::Fullscreen,full!=FALSE});
-            if(full) s->view->ExecuteScript(L"(()=>{let e=document.fullscreenElement;let v=e&&(e.matches('video')?e:e.querySelector('video'));return v&&v.videoHeight?v.videoWidth/v.videoHeight:0})()",
-                Callback<ICoreWebView2ExecuteScriptCompletedHandler>([weak,generation,request](HRESULT hr,PCWSTR value)->HRESULT {
-                    if(auto s=weak.lock();s&&s->life.IsCurrent(generation)&&request==s->fullscreenRequest&&!s->waiting&&SUCCEEDED(hr)&&value&&s->signal) {BOOL full=FALSE;if(FAILED(s->view->get_ContainsFullScreenElement(&full))||!full)return S_OK;if(auto signal=ParsePageSignal(L"{\"kind\":\"aspect\",\"aspect\":"+std::wstring(value)+L"}"))s->signal(*signal);}return S_OK;
-                }).Get());
-        }return S_OK;
-    }).Get(),&s->fullscreen));
     winrt::check_hresult(s->view->add_NewWindowRequested(Callback<ICoreWebView2NewWindowRequestedEventHandler>([current](ICoreWebView2*,ICoreWebView2NewWindowRequestedEventArgs* args)->HRESULT {
         if(auto s=current();s&&args) {args->put_Handled(TRUE);wil::unique_cotaskmem_string url;if(SUCCEEDED(args->get_Uri(&url))&&url&&Supported(url.get())&&s->newTab){auto queue=s->queue;auto action=s->newTab;auto address=std::wstring(url.get());queue.TryEnqueue([current,action,address]{if(current())action(address);});}}return S_OK;
     }).Get(),&s->newWindow));
@@ -193,7 +183,7 @@ OperationResult BrowserHost::Navigate(const std::wstring& url) {
     auto s=state_;s->pendingUrl=url;
     if(!s->ready)return {true,{}};
     if(s->cancelGesture)s->cancelGesture();
-    CancelNativeMouse(*s);++s->fullscreenRequest;s->waiting=true;s->navigationId=0;s->controller->put_IsVisible(FALSE);
+    CancelNativeMouse(*s);s->waiting=true;s->navigationId=0;s->controller->put_IsVisible(FALSE);
     const auto result=s->view->Navigate(url.c_str());
     if(FAILED(result)){s->waiting=false;s->controller->put_IsVisible(s->visible&&!s->occluded);return {false,BrowserError(result)};}
     return {};
@@ -210,13 +200,13 @@ void BrowserHost::Close() {
     auto s=state_;CancelNativeMouse(*s);s->life.Close();
     if(s->cancelGesture)s->cancelGesture();
     s->ready=false;
-    s->status={};s->signal={};s->document={};s->focus={};s->cancelGesture={};s->newTab={};s->closeTab={};s->wheel={};
+    s->status={};s->signal={};s->document={};s->focus={};s->cancelGesture={};s->newTab={};s->closeTab={};
     if(s->creation&&s->creation->result==E_PENDING)s->creation->Finish(E_ABORT);
     s->zoom.Detach();
     if(s->view&&s->events) {
         s->view->remove_NavigationStarting(s->starting);s->view->remove_ContentLoading(s->content);s->view->remove_NavigationCompleted(s->completed);
         s->view->remove_SourceChanged(s->source);s->view->remove_DocumentTitleChanged(s->title);s->view->remove_WebMessageReceived(s->message);
-        s->view->remove_ContainsFullScreenElementChanged(s->fullscreen);s->view->remove_NewWindowRequested(s->newWindow);
+        s->view->remove_NewWindowRequested(s->newWindow);
         s->view->remove_WindowCloseRequested(s->closeWindow);s->view->remove_ProcessFailed(s->failed);
     }
     if(s->controller&&s->events){s->controller->remove_GotFocus(s->gotFocus);s->controller->remove_LostFocus(s->lostFocus);}
@@ -262,7 +252,6 @@ void BrowserHost::CancelNativeMouse(State& s){
     if(s.surface&&GetCapture()==s.surface)ReleaseCapture();
     SendMouse(s,WM_MOUSELEAVE,0,0,{});
 }
-void BrowserHost::SetWheelHandler(std::function<bool(int,UINT)> handler){state_->wheel=std::move(handler);}
 bool BrowserHost::HandleParentWheel(UINT message,WPARAM w,LPARAM l){
     auto s=state_;if(!s->surface||(message!=WM_MOUSEWHEEL&&message!=WM_MOUSEHWHEEL))return false;
     RECT rect{};POINT point{GET_X_LPARAM(l),GET_Y_LPARAM(l)};
@@ -279,10 +268,7 @@ bool BrowserHost::HandleSurfaceMouse(State& s,UINT message,WPARAM w,LPARAM l){
     POINT point{GET_X_LPARAM(l),GET_Y_LPARAM(l)};
     if(wheel)ScreenToClient(s.surface,&point);
     UINT data=wheel?static_cast<UINT>(GET_WHEEL_DELTA_WPARAM(w)):(message==WM_XBUTTONDOWN||message==WM_XBUTTONUP||message==WM_XBUTTONDBLCLK?GET_XBUTTON_WPARAM(w):0);
-    if(message==WM_MOUSEWHEEL&&s.wheel){
-        UINT modifiers=0;if(GetKeyState(VK_CONTROL)&0x8000)modifiers|=MOD_CONTROL;if(GetKeyState(VK_MENU)&0x8000)modifiers|=MOD_ALT;if(GetKeyState(VK_SHIFT)&0x8000)modifiers|=MOD_SHIFT;if((GetKeyState(VK_LWIN)|GetKeyState(VK_RWIN))&0x8000)modifiers|=MOD_WIN;
-        if(s.wheel(GET_WHEEL_DELTA_WPARAM(w),modifiers))return true;
-    }
+
     if(down&&s.controller){SetCapture(s.surface);s.controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);}
     if(message==WM_MOUSEMOVE){TRACKMOUSEEVENT track{sizeof(track),TME_LEAVE,s.surface,0};TrackMouseEvent(&track);}
     const UINT keys=GET_KEYSTATE_WPARAM(w);

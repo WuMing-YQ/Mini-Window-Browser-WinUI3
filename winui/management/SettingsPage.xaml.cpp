@@ -21,7 +21,6 @@ std::wstring Help(const std::wstring& name){
   {L"最小化到托盘",L"最小化后留在系统托盘，可随时恢复。"},
   {L"边缘吸附距离",L"单位为像素；按住 Ctrl 拖动可暂时绕过吸附。"},
   {L"最大化顶部拖动",L"最大化时拖动顶部边缘，恢复为普通窗口。"},
-  {L"组合键＋滚轮调整窗口大小",L"仅普通窗口有焦点时生效，每格调整 5%。"},
   {L"沉浸模式",L"挖孔与移入减淡分别记住基础不透明度。"},
   {L"挖孔模式基础不透明度 (%)",L"孔外的显示不透明度；孔内始终透明。"},
   {L"减淡模式基础不透明度 (%)",L"鼠标移出浏览窗口后的显示不透明度。"},
@@ -85,16 +84,15 @@ void SettingsPage::Bind(miniwindow::AppCoordinator& app,std::function<void(miniw
  for(int i=0;i<6;++i){Panel section;section.Spacing(6);section.Visibility(Visibility::Collapsed);Sections().Children().Append(section);panels_.push_back(section);}
  SelectCategory(0);
  using S=miniwindow::AppSettings;
- Group(panels_[0],L"窗口行为");Boolean(panels_[0],L"最小化到托盘",&S::useSystemTray);Number(panels_[0],L"边缘吸附距离",&S::snapThreshold,0,200);Boolean(panels_[0],L"最大化顶部拖动",&S::maximizedTopDragEnabled);Boolean(panels_[0],L"组合键＋滚轮调整窗口大小",&S::windowWheelEnabled);
- panels_[0].Children().Append(miniwindow::ui::Text(L"普通窗口有焦点时，每格调整 5%；组合键在“快捷键”中选择。"));
+ Group(panels_[0],L"窗口行为");Boolean(panels_[0],L"最小化到托盘",&S::useSystemTray);Number(panels_[0],L"边缘吸附距离",&S::snapThreshold,0,200);Boolean(panels_[0],L"最大化顶部拖动",&S::maximizedTopDragEnabled);
+ panels_[0].Children().Append(miniwindow::ui::Text(L"Ctrl+Alt+←／→ 调整窗口大小，沉浸时也可使用；可在“快捷键”中修改。"));
  Group(panels_[1],L"显示方式");Choice(panels_[1],L"沉浸模式",{L"鼠标挖孔",L"移入减淡"},[](const S& s){return static_cast<int>(s.immersionStyle);},[](S& s,int n){s.immersionStyle=static_cast<miniwindow::ImmersionStyle>(n);});
  Range(panels_[1],L"挖孔模式基础不透明度 (%)",&S::holeOpacityPercent,0,100);Range(panels_[1],L"减淡模式基础不透明度 (%)",&S::autoHideOpacityPercent,0,100);Range(panels_[1],L"移入额外减淡比例 (%)",&S::hoverReductionPercent,0,100);Range(panels_[1],L"挖孔半径（物理像素）",&S::holeRadius,10,2000);
  panels_[1].Children().Append(miniwindow::ui::Text(L"移入时显示不透明度 = 基础不透明度 × (1 − 减淡比例)。普通模式始终不透明。"));auto restore=Action(L"恢复普通模式");restore.Click([this](auto&&,auto&&){app_->RestoreNormal();});Row(panels_[1],L"恢复窗口",restore,L"恢复完整不透明、可点击的普通窗口。");
  Group(panels_[2],L"网页");TextBox home;home.Width(230);AccessibleName(home,L"主页");Row(panels_[2],L"主页",home);fields_[L"主页"]={home,[home](S& s){s.homeUrl=std::wstring(home.Text());return miniwindow::OperationResult{};},[home](const S& s){home.Text(s.homeUrl);}};home.TextChanged([this](auto&&,auto&&){Changed(L"主页",false);});home.GotFocus([this](auto&&,auto&&){editing_=L"主页";});home.LostFocus([this](auto&&,auto&&){editing_.clear();if(dirty_.contains(L"主页"))Commit(L"主页");});
  Boolean(panels_[2],L"固定网页缩放",&S::fixedWebZoomEnabled);Number(panels_[2],L"网页缩放 (%)",&S::fixedWebZoomPercent,25,500);Group(panels_[2],L"媒体与播放");Boolean(panels_[2],L"视频全屏自动按比例调窗",&S::autoFitVideoFullscreen);Boolean(panels_[2],L"锁定视频全屏比例",&S::lockVideoFullscreenAspect);Boolean(panels_[2],L"隐藏时自动暂停",&S::autoPauseOnHide);Boolean(panels_[2],L"隐藏后允许媒体快捷键",&S::backgroundMediaHotkeys);Number(panels_[2],L"长按快进倍速",&S::holdPlaybackRate,2,5);
- Panel modifiers;modifiers.Orientation(Orientation::Horizontal);modifiers.Spacing(8);Group(panels_[3],L"窗口调节");Row(panels_[3],L"滚轮组合键",modifiers,L"至少选择一个修饰键，按住后滚动鼠标。");
- for(const auto& entry:std::vector<std::pair<std::wstring,UINT>>{{L"Ctrl",MOD_CONTROL},{L"Alt",MOD_ALT},{L"Shift",MOD_SHIFT},{L"Win",MOD_WIN}}){CheckBox box;box.Content(box_value(entry.first));AccessibleName(box,L"滚轮组合键 "+entry.first);modifiers.Children().Append(box);auto key=L"滚轮组合键 "+entry.first;const auto bit=entry.second;fields_[key]={box,[box,bit](S& s){if(box.IsChecked().Value())s.windowWheelModifiers|=bit;else s.windowWheelModifiers&=~bit;return miniwindow::OperationResult{};},[box,bit](const S& s){box.IsChecked((s.windowWheelModifiers&bit)!=0);}};box.Checked([this,key](auto&&,auto&&){Changed(key,true);});box.Unchecked([this,key](auto&&,auto&&){Changed(key,true);});}
  Group(panels_[3],L"全局快捷键");
+ panels_[3].Children().Append(miniwindow::ui::Text(L"Ctrl+Alt+↑／↓：沉浸模式常驻不透明度 ±5%；←／→：窗口大小约 ±5%。不需要窗口焦点。"));
  for(size_t i=0;i<xiaochuang::kHotkeyCount;++i){Panel controls;controls.Orientation(Orientation::Horizontal);controls.Spacing(12);auto label=app.Snapshot().state.hotkeys[i].displayName;auto enabled=Switch(label+L" 启用");enabled_[i]=enabled;auto button=Action(label+L" 修改快捷键");button.MinWidth(100);bindings_[i]=button;controls.Children().Append(button);controls.Children().Append(enabled);Row(panels_[3],label,controls);auto apply=[this,i,enabled](auto&&,auto&&){if(syncing_)return;auto value=app_->Snapshot().state.hotkeys[i];value.enabled=enabled.IsOn();auto result=app_->UpdateHotkey(static_cast<miniwindow::HotkeyAction>(i),value);if(!result.ok)Feedback().Text(result.message);Refresh();};enabled.Toggled(apply);button.Click([capture,i](auto&&,auto&&){capture(static_cast<miniwindow::HotkeyAction>(i));});}
 
  hotkeyStatus_=TextBlock();hotkeyStatus_.TextWrapping(TextWrapping::Wrap);AccessibleName(hotkeyStatus_,L"快捷键状态");panels_[3].Children().Append(hotkeyStatus_);
